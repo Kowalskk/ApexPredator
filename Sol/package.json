@@ -1,0 +1,23 @@
+{
+  "name": "apexpredator-sol",
+  "version": "1.0.0",
+  "description": "Telegram bot for Solana on-chain analytics",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts"
+  },
+  "dependencies": {
+    "grammy": "^1.35.0",
+    "helius-sdk": "^2.2.0",
+    "better-sqlite3": "^11.8.0",
+    "dotenv": "^16.4.7"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^22.13.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}
