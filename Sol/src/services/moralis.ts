@@ -188,6 +188,41 @@ export async function getEvmTopHolders(
   return result;
 }
 
+// ─── Token buyers (all wallets that ever received the token) ─────────────────
+// Uses ERC-20 transfers endpoint, paginates up to maxPages to get unique buyers.
+
+export async function getEvmTokenBuyers(
+  tokenAddress: string,
+  chain: string = "eth",
+  maxPages = 5
+): Promise<Set<string>> {
+  const cacheKey = `moralis:buyers:${chain}:${tokenAddress}`;
+  const cached = cacheGet<string[]>(cacheKey);
+  if (cached) return new Set(cached);
+
+  const buyers = new Set<string>();
+  let cursor: string | null = null;
+
+  for (let page = 0; page < maxPages; page++) {
+    const params = new URLSearchParams({ chain, limit: "100", order: "DESC" });
+    if (cursor) params.set("cursor", cursor);
+    const url = `${BASE_URL}/erc20/${tokenAddress}/transfers?${params}`;
+    const res = await fetch(url, { headers: headers() });
+    if (!res.ok) break;
+    const json = (await res.json()) as any;
+    const transfers: any[] = json.result || [];
+    for (const t of transfers) {
+      const to = t.toAddress || t.to_address;
+      if (to) buyers.add(to.toLowerCase());
+    }
+    cursor = json.cursor || null;
+    if (!cursor || transfers.length === 0) break;
+  }
+
+  cacheSet(cacheKey, Array.from(buyers), config.cacheTtl);
+  return buyers;
+}
+
 // ─── Wallet first tx (age detection) ──────────────────────────────────────────
 
 export async function getEvmWalletAge(
