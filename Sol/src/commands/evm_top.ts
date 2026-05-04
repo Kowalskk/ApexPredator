@@ -1,5 +1,5 @@
 import { Context } from "grammy";
-import { getEvmTopHolders } from "../services/moralis";
+import { getEvmTopHolders, getEvmWalletTokens } from "../services/moralis";
 import { getTokenInfo, detectEvmChain } from "../services/dexscreener";
 import { shortenEvmAddress, escHtml } from "../utils/evm";
 import { splitMessage } from "../utils/format";
@@ -59,6 +59,15 @@ export async function handleEvmTop(
     lines.push(`<code>${escHtml(tokenAddress)}</code>`);
     lines.push("");
 
+    // Fetch portfolios for all holders in parallel (Moralis cache helps)
+    const portfolios = await Promise.all(
+      holders.map((h) =>
+        h.ownerAddress
+          ? getEvmWalletTokens(h.ownerAddress, chain).catch(() => [])
+          : Promise.resolve([])
+      )
+    );
+
     for (let i = 0; i < holders.length; i++) {
       const h = holders[i];
       if (!h.ownerAddress) continue;
@@ -74,6 +83,23 @@ export async function handleEvmTop(
         `${i + 1}. ${sizeEmoji} <a href="${explorer}${h.ownerAddress}">${escHtml(addrShort)}</a> — <b>${escHtml(pct)}%</b> · <code>${escHtml(usd)}</code>`
       );
       lines.push(`<code>${escHtml(h.ownerAddress)}</code>`);
+
+      // Top 5 portfolio holdings (exclude the queried token)
+      const portfolio = portfolios[i]
+        .filter((t) => t.tokenAddress.toLowerCase() !== tokenAddress.toLowerCase() && t.usdValue >= 5)
+        .sort((a, b) => b.usdValue - a.usdValue)
+        .slice(0, 5);
+
+      for (let j = 0; j < portfolio.length; j++) {
+        const t = portfolio[j];
+        const branch = j === portfolio.length - 1 ? "└" : "├";
+        const tUsd = t.usdValue >= 1000
+          ? `$${(t.usdValue / 1000).toFixed(1)}K`
+          : `$${t.usdValue.toFixed(0)}`;
+        lines.push(`  ${branch} ${escHtml(t.symbol || "???")} · <code>${escHtml(tUsd)}</code>`);
+      }
+
+      lines.push("");
     }
 
     const fullText = lines.join("\n");
