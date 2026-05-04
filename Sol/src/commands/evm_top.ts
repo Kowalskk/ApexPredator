@@ -61,13 +61,14 @@ export async function handleEvmTop(
 
     for (let i = 0; i < holders.length; i++) {
       const h = holders[i];
-      const pct = h.percentageRelativeToTotalSupply.toFixed(2);
-      const pctNum = h.percentageRelativeToTotalSupply;
+      if (!h.ownerAddress) continue;
+      const pct = (h.percentageRelativeToTotalSupply || 0).toFixed(2);
+      const pctNum = h.percentageRelativeToTotalSupply || 0;
       const sizeEmoji = pctNum >= 5 ? "🐋" : pctNum >= 2 ? "🦈" : pctNum >= 0.5 ? "🐟" : "·";
       const addrShort = shortenEvmAddress(h.ownerAddress, 4);
-      const usd = h.usdValue >= 1000
-        ? `$${(h.usdValue / 1000).toFixed(1)}K`
-        : `$${h.usdValue.toFixed(0)}`;
+      const usd = (h.usdValue || 0) >= 1000
+        ? `$${((h.usdValue || 0) / 1000).toFixed(1)}K`
+        : `$${(h.usdValue || 0).toFixed(0)}`;
 
       lines.push(
         `${i + 1}. ${sizeEmoji} <a href="${explorer}${h.ownerAddress}">${escHtml(addrShort)}</a> — <b>${escHtml(pct)}%</b> · <code>${escHtml(usd)}</code>`

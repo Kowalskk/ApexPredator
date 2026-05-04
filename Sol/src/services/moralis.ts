@@ -177,10 +177,10 @@ export async function getEvmTopHolders(
     const raw = BigInt(h.balance || "0");
     const balance = Number(raw) / 10 ** decimals;
     return {
-      ownerAddress: h.ownerAddress,
+      ownerAddress: h.ownerAddress || h.owner_address || h.address || "",
       balance,
-      usdValue: parseFloat(h.usdValue || "0"),
-      percentageRelativeToTotalSupply: parseFloat(h.percentageRelativeToTotalSupply || "0"),
+      usdValue: parseFloat(h.usdValue || h.usd_value || "0"),
+      percentageRelativeToTotalSupply: parseFloat(h.percentageRelativeToTotalSupply || h.percentage_relative_to_total_supply || "0"),
     };
   });
 
