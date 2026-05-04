@@ -142,7 +142,7 @@ export async function getEvmWalletTokens(
     const raw = BigInt(t.balance || "0");
     const balance = Number(raw) / 10 ** decimals;
     return {
-      tokenAddress: t.tokenAddress,
+      tokenAddress: t.tokenAddress || t.token_address || "",
       symbol: t.symbol || "???",
       name: t.name || "Unknown",
       decimals,

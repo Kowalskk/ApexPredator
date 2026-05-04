@@ -86,7 +86,7 @@ export async function handleEvmTop(
 
       // Top 5 portfolio holdings (exclude the queried token)
       const portfolio = portfolios[i]
-        .filter((t) => t.tokenAddress.toLowerCase() !== tokenAddress.toLowerCase() && t.usdValue >= 5)
+        .filter((t) => t.tokenAddress && t.tokenAddress.toLowerCase() !== tokenAddress.toLowerCase() && t.usdValue >= 5)
         .sort((a, b) => b.usdValue - a.usdValue)
         .slice(0, 5);
 
