@@ -5,6 +5,7 @@ export const config = {
   telegramBotToken: process.env.TELEGRAM_BOT_TOKEN!,
   heliusApiKey: process.env.HELIUS_API_KEY!,
   birdeyeApiKey: process.env.BIRDEYE_API_KEY,
+  moralisApiKey: process.env.MORALIS_API_KEY,
 
   // Rate limiting
   heliusRpsGeneral: 10,

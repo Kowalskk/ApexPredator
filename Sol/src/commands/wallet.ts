@@ -1,6 +1,8 @@
 import { Context } from "grammy";
 import { getWalletPnl } from "../services/helius_extended";
 import { isValidSolanaAddress, shortenAddress } from "../utils/solana";
+import { detectChain } from "../utils/evm";
+import { handleEvmWallet } from "./evm_wallet";
 import { escMd, splitMessage } from "../utils/format";
 
 function fmtSol(sol: number): string {
@@ -37,6 +39,19 @@ export async function handleWallet(ctx: Context): Promise<void> {
   }
 
   const address = args[0];
+  const chain = detectChain(address);
+
+  if (!chain) {
+    await ctx.reply("❌ Invalid address. Provide a Solana (base58) or EVM (0x...) address.");
+    return;
+  }
+
+  // EVM chains — detect which one from optional second arg, default eth
+  if (chain === "evm") {
+    const evmChain = (args[1] || "eth").toLowerCase();
+    return handleEvmWallet(ctx, address, evmChain);
+  }
+
   if (!isValidSolanaAddress(address)) {
     await ctx.reply("❌ Invalid Solana address.");
     return;

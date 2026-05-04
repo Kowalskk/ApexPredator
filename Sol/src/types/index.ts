@@ -111,6 +111,41 @@ export interface WalletPnlResult {
   txCount: number;
 }
 
+// ─── EVM Wallet PnL ──────────────────────────────────────────────────────────
+
+export interface EvmTokenTrade {
+  tokenAddress: string;
+  symbol: string;
+  ethIn: number;       // ETH/BNB spent buying
+  ethOut: number;      // ETH/BNB received selling
+  usdIn: number;
+  usdOut: number;
+  pnlUsd: number;
+  pnlRatio: number;    // pnl / cost
+  isOpen: boolean;
+  firstBuyTs: number;
+  lastTs: number;
+  holdingSeconds: number;
+}
+
+export interface EvmWalletPnlResult {
+  address: string;
+  chain: string;
+  totalTrades: number;
+  wins: number;
+  losses: number;
+  openPositions: number;
+  winrate: number;
+  pnlRatio: number;
+  totalPnlUsd: number;
+  totalCostUsd: number;
+  nativePriceUsd: number;   // ETH or BNB price
+  tradingStyle: TradeStyle;
+  medianHoldingSeconds: number;
+  trades: EvmTokenTrade[];
+  outgoingTransfers: OutgoingTransfer[];
+}
+
 // ─── pump.fun ────────────────────────────────────────────────────────────────
 
 export interface GraduatedToken {

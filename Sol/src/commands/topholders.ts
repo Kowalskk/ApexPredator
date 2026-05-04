@@ -4,6 +4,8 @@ import { getTokenInfo } from "../services/dexscreener";
 import { checkWalletAge } from "../services/helius_extended";
 import { classifyWallet } from "../services/labels";
 import { isValidSolanaAddress, shortenAddress } from "../utils/solana";
+import { detectChain } from "../utils/evm";
+import { handleEvmTop } from "./evm_top";
 import { escMd, splitMessage } from "../utils/format";
 import { config } from "../config";
 import { TokenHolding } from "../types";
@@ -45,6 +47,18 @@ export async function handleTopHolders(ctx: Context, topN: number): Promise<void
   }
 
   const mint = args[0];
+  const chain = detectChain(mint);
+
+  if (!chain) {
+    await ctx.reply("❌ Invalid address. Provide a Solana (base58) or EVM (0x...) token address.");
+    return;
+  }
+
+  if (chain === "evm") {
+    const evmChain = (args[1] || "eth").toLowerCase();
+    return handleEvmTop(ctx, mint, evmChain, topN);
+  }
+
   if (!isValidSolanaAddress(mint)) {
     await ctx.reply("❌ Invalid Solana address.");
     return;
@@ -148,7 +162,6 @@ export async function handleTopHolders(ctx: Context, topN: number): Promise<void
 
       // Header: #N  Address [X.XX%] SYMBOL  🐋 🌱
       const pctStr = escMd(fmtPct(holdingPct));
-      const symStr = escMd(tokenSymbol);
       blocks.push(`*\\#${i + 1}* ${displayName} \\[${pctStr}\\] ${escMd(tokenSymbol)} ${emojis}`);
 
       // Top 5 portfolio holdings (exclude the analyzed token itself)
