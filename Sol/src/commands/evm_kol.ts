@@ -1,6 +1,7 @@
 import { Context } from "grammy";
 import { getEvmTokenBuyers, getEvmTopHolders } from "../services/moralis";
 import { getTokenInfo, detectEvmChain } from "../services/dexscreener";
+import { filterEoaTraders } from "../services/evm_filters";
 import { shortenEvmAddress, escHtml } from "../utils/evm";
 import { splitMessage } from "../utils/format";
 
@@ -60,7 +61,15 @@ export async function handleEvmKol(ctx: Context, mints: string[]): Promise<void>
       [...first].filter((addr) => rest.every((s) => s.has(addr)))
     );
 
-    if (intersection.size === 0) {
+    // Filter out routers / aggregators / contracts — keep only EOA traders
+    await ctx.api.editMessageText(
+      ctx.chat!.id, statusMsg.message_id,
+      `🔍 Filtering routers and contracts (${intersection.size} candidates)...`
+    );
+    const { kept, filtered } = await filterEoaTraders(Array.from(intersection), chain);
+    const eoaSet = new Set(kept);
+
+    if (eoaSet.size === 0) {
       await ctx.api.editMessageText(
         ctx.chat!.id, statusMsg.message_id,
         `🎯 <b>KOL Finder — ${symbols.map(escHtml).join(" + ")}</b>\n\nNo wallets found that bought all ${mints.length} tokens.\n\n<i>Searched last ~500 transfers per token on ${chain.toUpperCase()}.</i>`,
@@ -73,7 +82,7 @@ export async function handleEvmKol(ctx: Context, mints: string[]): Promise<void>
     interface Entry { address: string; holdings: { symbol: string; pct: number; usd: number; isHolder: boolean }[] }
     const results: Entry[] = [];
 
-    for (const addr of intersection) {
+    for (const addr of eoaSet) {
       const holdings = mints.map((_, i) => {
         const h = holderMaps[i].get(addr);
         return {
@@ -94,7 +103,7 @@ export async function handleEvmKol(ctx: Context, mints: string[]): Promise<void>
 
     const lines: string[] = [];
     lines.push(`🎯 <b>KOL Finder — ${symbols.map(escHtml).join(" + ")} [${chain.toUpperCase()}]</b>`);
-    lines.push(`Found: <b>${results.length}</b> wallets that bought all ${mints.length} tokens\n`);
+    lines.push(`Found: <b>${results.length}</b> EOA wallets (filtered ${filtered} routers/contracts)\n`);
 
     const showMax = Math.min(results.length, 50);
     for (let i = 0; i < showMax; i++) {
