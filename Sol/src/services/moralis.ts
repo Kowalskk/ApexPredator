@@ -77,7 +77,7 @@ export async function getEvmWalletSwaps(
       symbol: s.tokenOut?.symbol || "???",
       amount: parseFloat(s.tokenOut?.amount || "0"),
     },
-    amountUsd: parseFloat(s.totalValueUsd || s.amountUsd || "0"),
+    amountUsd: Number(s.totalValueUsd ?? s.amountUsd ?? 0) || 0,
   }));
 
   cacheSet(cacheKey, result, config.cacheTtl);
@@ -114,7 +114,7 @@ export async function getEvmWalletTransfers(
         amount,
         toAddress: t.toAddress,
         fromAddress: t.fromAddress,
-        valueUsd: parseFloat(t.valueWithUsd?.usdValue || "0"),
+        valueUsd: Number(t.valueWithUsd?.usdValue ?? t.usdValue ?? 0) || 0,
       };
     });
 
@@ -147,8 +147,8 @@ export async function getEvmWalletTokens(
       name: t.name || "Unknown",
       decimals,
       balance,
-      usdValue: parseFloat(t.usdValue || "0"),
-      percentageRelativeToTotalSupply: parseFloat(t.percentageRelativeToTotalSupply || "0"),
+      usdValue: Number(t.usdValue ?? t.usd_value ?? 0) || 0,
+      percentageRelativeToTotalSupply: Number(t.percentageRelativeToTotalSupply ?? t.percentage_relative_to_total_supply ?? 0) || 0,
     };
   });
 
@@ -179,8 +179,8 @@ export async function getEvmTopHolders(
     return {
       ownerAddress: h.ownerAddress || h.owner_address || h.address || "",
       balance,
-      usdValue: parseFloat(h.usdValue || h.usd_value || "0"),
-      percentageRelativeToTotalSupply: parseFloat(h.percentageRelativeToTotalSupply || h.percentage_relative_to_total_supply || "0"),
+      usdValue: Number(h.usdValue ?? h.usd_value ?? 0) || 0,
+      percentageRelativeToTotalSupply: Number(h.percentageRelativeToTotalSupply ?? h.percentage_relative_to_total_supply ?? 0) || 0,
     };
   });
 
