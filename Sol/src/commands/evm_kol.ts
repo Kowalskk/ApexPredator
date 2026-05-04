@@ -20,12 +20,12 @@ export async function handleEvmKol(ctx: Context, mints: string[]): Promise<void>
 
     await ctx.api.editMessageText(
       ctx.chat!.id, statusMsg.message_id,
-      `🔍 Fetching buyers on ${chain.toUpperCase()} for ${mints.length} tokens (last 500 txs each)...`
+      `🔍 Fetching on ${chain.toUpperCase()}: top 500 holders + last 1000 transfers per token...`
     );
 
-    // Fetch buyers + current holders + token info in parallel
+    // Fetch buyers (last 1000 transfers) + current holders (top 500) + token info in parallel
     const [buyerSets, holderSets, tokenInfos] = await Promise.all([
-      Promise.all(mints.map((m) => getEvmTokenBuyers(m, chain, 5).catch(() => new Set<string>()))),
+      Promise.all(mints.map((m) => getEvmTokenBuyers(m, chain, 10).catch(() => new Set<string>()))),
       Promise.all(mints.map((m) => getEvmTopHolders(m, chain, 500).catch(() => []))),
       Promise.all(mints.map((m) => getTokenInfo(m).catch(() => null))),
     ]);
@@ -45,8 +45,17 @@ export async function handleEvmKol(ctx: Context, mints: string[]): Promise<void>
       return m;
     });
 
-    // Intersection of all buyer sets
-    const [first, ...rest] = buyerSets;
+    // Merge buyers + holders into one set per token
+    const combinedSets = mints.map((_, i) => {
+      const combined = new Set(buyerSets[i]);
+      for (const h of holderSets[i]) {
+        if (h.ownerAddress) combined.add(h.ownerAddress.toLowerCase());
+      }
+      return combined;
+    });
+
+    // Intersection across all tokens
+    const [first, ...rest] = combinedSets;
     const intersection = new Set<string>(
       [...first].filter((addr) => rest.every((s) => s.has(addr)))
     );
