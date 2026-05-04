@@ -1,6 +1,6 @@
 import { Context } from "grammy";
 import { getEvmTopHolders } from "../services/moralis";
-import { getTokenInfo } from "../services/dexscreener";
+import { getTokenInfo, detectEvmChain } from "../services/dexscreener";
 import { shortenEvmAddress, escHtml } from "../utils/evm";
 import { splitMessage } from "../utils/format";
 
@@ -18,14 +18,22 @@ const CHAIN_LABELS: Record<string, string> = {
 export async function handleEvmTop(
   ctx: Context,
   tokenAddress: string,
-  chain: string,
+  chainHint: string,
   limit: number
 ): Promise<void> {
-  const statusMsg = await ctx.reply(
-    `🔍 Fetching top ${limit} holders on ${CHAIN_LABELS[chain] || chain}...`
-  );
+  const statusMsg = await ctx.reply(`🔍 Fetching top ${limit} holders...`);
 
   try {
+    // Auto-detect chain from DexScreener if not explicitly provided
+    const chain: string = chainHint === "eth"
+      ? await detectEvmChain(tokenAddress)
+      : chainHint;
+
+    await ctx.api.editMessageText(
+      ctx.chat!.id, statusMsg.message_id,
+      `🔍 Fetching top ${limit} holders on ${CHAIN_LABELS[chain] || chain}...`
+    );
+
     const [holders, tokenInfo] = await Promise.all([
       getEvmTopHolders(tokenAddress, chain, limit),
       getTokenInfo(tokenAddress).catch(() => null),
@@ -34,7 +42,7 @@ export async function handleEvmTop(
     if (holders.length === 0) {
       await ctx.api.editMessageText(
         ctx.chat!.id, statusMsg.message_id,
-        "❌ No holders found. Check the contract address."
+        "❌ No holders found. Check the contract address and chain."
       );
       return;
     }

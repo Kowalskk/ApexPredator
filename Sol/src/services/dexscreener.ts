@@ -51,6 +51,31 @@ export async function getTokenInfo(mint: string): Promise<DexScreenerToken | nul
   return result;
 }
 
+// Map DexScreener chainId → Moralis chain string
+const DS_CHAIN_MAP: Record<string, string> = {
+  ethereum:  "eth",
+  bsc:       "bsc",
+  base:      "base",
+  arbitrum:  "arbitrum",
+  polygon:   "polygon",
+  avalanche: "avalanche",
+  optimism:  "optimism",
+  solana:    "solana",
+};
+
+export async function detectEvmChain(address: string): Promise<string> {
+  try {
+    const res = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${address}`);
+    const json = (await res.json()) as any;
+    const pairs: any[] = json.pairs || [];
+    if (pairs.length === 0) return "eth";
+    const best = pairs.sort((a: any, b: any) => (b.liquidity?.usd || 0) - (a.liquidity?.usd || 0))[0];
+    return DS_CHAIN_MAP[best.chainId] || "eth";
+  } catch {
+    return "eth";
+  }
+}
+
 export async function getTokenMetadata(mint: string): Promise<string | null> {
   const cacheKey = `dex:meta:${mint}`;
   const cached = cacheGet<string | null>(cacheKey);
