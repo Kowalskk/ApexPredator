@@ -1,8 +1,10 @@
 import { Context } from "grammy";
-import { findCommonHolders, KolWallet } from "../services/helius";
+import { findCommonHolders } from "../services/helius";
 import { getTokenInfo } from "../services/dexscreener";
 import { classifyWallet } from "../services/labels";
 import { isValidSolanaAddress, shortenAddress } from "../utils/solana";
+import { isValidEvmAddress } from "../utils/evm";
+import { handleEvmKol } from "./evm_kol";
 import { escMd, splitMessage } from "../utils/format";
 import { config } from "../config";
 
@@ -34,6 +36,11 @@ export async function handleKol(ctx: Context): Promise<void> {
       { parse_mode: "MarkdownV2" }
     );
     return;
+  }
+
+  // Route to EVM handler if addresses are 0x...
+  if (args.every((a) => isValidEvmAddress(a))) {
+    return handleEvmKol(ctx, args);
   }
 
   const invalid = args.filter((a) => !isValidSolanaAddress(a));
