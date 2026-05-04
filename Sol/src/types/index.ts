@@ -54,6 +54,63 @@ export interface SwapTransaction {
   timestamp: number;
 }
 
+export interface TokenTrade {
+  mint: string;
+  symbol: string;
+  solIn: number;       // SOL spent buying
+  solOut: number;      // SOL received selling
+  pnlSol: number;      // solOut - solIn
+  pnlUsd: number;      // pnlSol * solPrice
+  pnlRatio: number;    // pnl / cost (GMGN-style, 2.0 = doubled)
+  isOpen: boolean;     // sold < bought (still holding)
+  firstBuyTs: number;
+  lastSellTs: number;
+  holdingSeconds: number;  // lastSellTs - firstBuyTs (if closed)
+  lastTimestamp: number;
+}
+
+export interface LpActivity {
+  mint: string;
+  symbol: string;
+  solDeposited: number;
+  solWithdrawn: number;
+  pnlSol: number;
+  pnlUsd: number;
+}
+
+export interface OutgoingTransfer {
+  mint: string;
+  symbol: string;
+  amount: number;
+  toAddress: string;
+  timestamp: number;
+}
+
+export type TradeStyle = "scalper" | "day" | "swing" | "holder" | "mixed";
+
+export interface WalletPnlResult {
+  address: string;
+  totalTrades: number;
+  wins: number;
+  losses: number;
+  openPositions: number;
+  winrate: number;
+  pnlRatio: number;        // GMGN: total_profit / total_cost
+  swapPnlSol: number;
+  swapPnlUsd: number;
+  lpPnlSol: number;
+  lpPnlUsd: number;
+  totalPnlUsd: number;
+  totalCostUsd: number;
+  solPriceUsd: number;
+  tradingStyle: TradeStyle;
+  medianHoldingSeconds: number;
+  trades: TokenTrade[];
+  lpActivities: LpActivity[];
+  outgoingTransfers: OutgoingTransfer[];
+  txCount: number;
+}
+
 // ─── pump.fun ────────────────────────────────────────────────────────────────
 
 export interface GraduatedToken {
@@ -93,6 +150,33 @@ export interface FunderInfo {
   funder: string | null;
   amount: number;
   timestamp: number;
+}
+
+// ─── Sniper Cabal Analysis ──────────────────────────────────────────────────
+
+export interface SniperWallet {
+  address: string;
+  tokensSniped: { mint: string; symbol: string; solBought: number; timestamp: number }[];
+  funder: string | null;
+  funderLabel: string | null;
+  fundingAmount: number;       // SOL received from funder
+  fundingTimestamp: number;    // when funder sent SOL
+  gapSecondsBeforeFirstBuy: number;  // seconds between funding and first buy
+}
+
+export interface SniperCluster {
+  id: string;                  // A, B, C...
+  reason: string;              // why these were grouped
+  sharedFunder: string | null;
+  sharedAmount: number | null; // if amounts match
+  wallets: SniperWallet[];
+}
+
+export interface SniperAnalysisResult {
+  tokens: { mint: string; symbol: string }[];
+  totalSnipers: number;
+  clusters: SniperCluster[];
+  orphans: SniperWallet[];
 }
 
 // ─── CoinGecko Heatmap ───────────────────────────────────────────────────────

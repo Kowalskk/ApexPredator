@@ -57,6 +57,33 @@ export const KNOWN_WALLETS: Record<string, { name: string; emoji: string }> = {
 const STABLES = new Set(["USDC", "USDT", "DAI", "BUSD", "USDH", "USDD"]);
 const BLUECHIPS = new Set(["WBTC", "WETH", "wSOL", "ETH", "BTC", "SOL"]);
 
+// ─── GMGN-style Wallet Tags ─────────────────────────────────────────────────
+// Based on GMGN taxonomy: sniper, bundler, rat_trader, fresh_wallet, smart_degen
+// Each tag is derived from on-chain signals we can compute.
+
+export type WalletTag =
+  | "sniper"        // bought in first seconds of launch
+  | "bundler"       // part of a multi-wallet atomic buy at deploy
+  | "fresh_wallet"  // newly created, <20 txs or <30 days
+  | "smart_degen"   // holds 8+ tokens, large portfolio
+  | "diamond"       // >40% in stables/blue-chips
+  | "whale"         // holds >2% of token supply
+  | "shark"         // holds >1% of token supply
+  | "fish"          // holds >0.3% of token supply
+  | "cex";          // known CEX deposit address
+
+export const TAG_EMOJI: Record<WalletTag, string> = {
+  sniper: "🎯",
+  bundler: "📦",
+  fresh_wallet: "🌱",
+  smart_degen: "🔥",
+  diamond: "💎",
+  whale: "🐋",
+  shark: "🦈",
+  fish: "🐟",
+  cex: "🏦",
+};
+
 // ─── Wallet Classification ───────────────────────────────────────────────────
 
 export interface WalletClassification {
@@ -66,65 +93,61 @@ export interface WalletClassification {
   emojis: string;
   /** Is this a known exchange/CEX? */
   isExchange: boolean;
+  /** GMGN-style structured tags */
+  tags: WalletTag[];
 }
 
 export function classifyWallet(opts: {
   address: string;
-  holdingPct: number;        // % of the analyzed token's supply
+  holdingPct: number;
   totalPortfolioUsd: number;
   holdings: TokenHolding[];
   isFresh: boolean;
 }): WalletClassification {
   const { address, holdingPct, totalPortfolioUsd, holdings, isFresh } = opts;
 
-  // 1. Check known wallets first
+  // 1. Known CEX / exchange wallets
   const known = KNOWN_WALLETS[address];
   if (known) {
-    return { exchangeName: known.name, emojis: known.emoji, isExchange: true };
+    return {
+      exchangeName: known.name,
+      emojis: known.emoji,
+      isExchange: true,
+      tags: ["cex"],
+    };
   }
 
-  const emojiParts: string[] = [];
+  const tags: WalletTag[] = [];
 
-  // 2. Size emoji (based on % of supply held)
-  if (holdingPct >= 5) {
-    emojiParts.push("🐋"); // mega whale
-  } else if (holdingPct >= 2) {
-    emojiParts.push("🐋"); // whale
-  } else if (holdingPct >= 1) {
-    emojiParts.push("🦈"); // big fish
-  } else if (holdingPct >= 0.3) {
-    emojiParts.push("🐟"); // fish
-  } else {
-    emojiParts.push("🐠"); // small fish
-  }
+  // 2. Size tag by % of supply held (GMGN-inspired thresholds)
+  if (holdingPct >= 2) tags.push("whale");
+  else if (holdingPct >= 1) tags.push("shark");
+  else if (holdingPct >= 0.3) tags.push("fish");
 
   // 3. Portfolio quality
   const stableValue = holdings
     .filter((h) => STABLES.has(h.symbol))
     .reduce((s, h) => s + h.usdValue, 0);
-
   const blueChipValue = holdings
     .filter((h) => BLUECHIPS.has(h.symbol))
     .reduce((s, h) => s + h.usdValue, 0);
-
   const stableAndBlueChip = stableValue + blueChipValue;
 
-  if (totalPortfolioUsd >= 100_000) {
-    emojiParts.push("🦅"); // large smart money
-  } else if (stableAndBlueChip >= totalPortfolioUsd * 0.4 && totalPortfolioUsd >= 5_000) {
-    emojiParts.push("💎"); // diamond hands (mainly stables/blue chips)
+  if (stableAndBlueChip >= totalPortfolioUsd * 0.4 && totalPortfolioUsd >= 5_000) {
+    tags.push("diamond");
   } else if (holdings.length >= 8) {
-    emojiParts.push("🔥"); // degen, many tokens
+    tags.push("smart_degen");
   }
 
   // 4. Fresh wallet
-  if (isFresh) {
-    emojiParts.push("🌱");
-  }
+  if (isFresh) tags.push("fresh_wallet");
+
+  const emojis = tags.map((t) => TAG_EMOJI[t]).join(" ");
 
   return {
     exchangeName: null,
-    emojis: emojiParts.join(" "),
+    emojis,
     isExchange: false,
+    tags,
   };
 }

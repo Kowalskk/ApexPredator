@@ -15,6 +15,7 @@ import { handleTwitter } from "./commands/twitter";
 import { handleSite } from "./commands/site";
 import { handleImg } from "./commands/img";
 import { handleHscan } from "./commands/hscan";
+import { handleSnipers } from "./commands/snipers";
 
 export function createBot(): Bot {
   const bot = new Bot(config.telegramBotToken);
@@ -22,66 +23,53 @@ export function createBot(): Bot {
   // Start command
   bot.command("start", async (ctx) => {
     await ctx.reply(
-      "🐺 *ApexPredator\\_sol*\n\n" +
-        "Solana on\\-chain analytics bot\\.\n\n" +
-        "*Commands:*\n" +
-        "/kol `<ca1> <ca2> [ca3]` \\- Find wallets that traded all given tokens\n" +
-        "/top20 `<ca>` \\- Top 20 holders \\+ their portfolio\n" +
-        "/top50 `<ca>` \\- Top 50 holders \\+ their portfolio\n" +
-        "/wallet `<address>` \\- Analyze wallet swap history\n" +
-        "/fresh `<ca>` \\- Detect fresh wallets among top holders\n" +
-        "/funded `<ca>` \\- Analyze wallet funding sources\n" +
-        "/bundle `<ca>` \\- Detect bundled buys at launch\n" +
-        "/early `<ca>` \\- First buyers of a pump\\.fun token\n" +
-        "/dex `<ca>` \\- Token info from DEXScreener\n" +
-        "/hmap \\- Market heatmap \\(24h\\)\n" +
-        "/graduated \\- Recently graduated pump\\.fun tokens\n" +
-        "/twitter `<handle>` \\- Twitter handle history\n" +
-        "/site `<url>` \\- Website similarity check\n" +
-        "/img `<ca>` \\- Reverse image search token icon\n" +
-        "/hscan `<ca>` \\- Holder count history\n" +
-        "/help \\- Show this message",
-      { parse_mode: "MarkdownV2" }
+      "🐺 <b>ApexPredator_sol</b>\n\n" +
+        "Solana on-chain analytics bot.\n\n" +
+        "<b>Commands:</b>\n" +
+        "/kol <code>&lt;ca1&gt; &lt;ca2&gt; [ca3]</code> - Find wallets that hold all given tokens\n" +
+        "/top20 <code>&lt;ca&gt;</code> - Top 20 holders + their portfolio\n" +
+        "/top50 <code>&lt;ca&gt;</code> - Top 50 holders + their portfolio\n" +
+        "/wallet <code>&lt;address&gt;</code> - Analyze wallet swap history\n" +
+        "/fresh <code>&lt;ca&gt;</code> - Detect fresh wallets among top holders\n" +
+        "/funded <code>&lt;ca&gt;</code> - Analyze wallet funding sources\n" +
+        "/bundle <code>&lt;ca&gt;</code> - Detect bundled buys at launch\n" +
+        "/early <code>&lt;ca&gt;</code> - First buyers of a pump.fun token\n" +
+        "/dex <code>&lt;ca&gt;</code> - Token info from DEXScreener\n" +
+        "/hmap - Market heatmap (24h)\n" +
+        "/graduated - Recently graduated pump.fun tokens\n" +
+        "/twitter <code>&lt;handle&gt;</code> - Twitter handle history\n" +
+        "/site <code>&lt;url&gt;</code> - Website similarity check\n" +
+        "/img <code>&lt;ca&gt;</code> - Reverse image search token icon\n" +
+        "/hscan <code>&lt;ca&gt;</code> - Holder count history\n" +
+        "/snipers <code>&lt;ca1&gt; &lt;ca2&gt; ...</code> - Cabal sniper clustering\n" +
+        "/help - Show this message",
+      { parse_mode: "HTML" }
     );
   });
 
   bot.command("help", async (ctx) => {
     await ctx.reply(
-      "🐺 *ApexPredator\\_sol Commands*\n\n" +
-        "*On\\-chain Analysis:*\n" +
-        "/kol `<ca1> <ca2> [ca3]`\n" +
-        "  Find wallets that hold/traded ALL given tokens \\(max 3\\)\n\n" +
-        "/top20 `<contract>`\n" +
-        "  Top 20 holders of a token \\+ their holdings\n\n" +
-        "/top50 `<contract>`\n" +
-        "  Top 50 holders of a token \\+ their holdings\n\n" +
-        "/wallet `<address>`\n" +
-        "  Analyze swap history of a wallet\n\n" +
-        "/fresh `<contract>`\n" +
-        "  Check how many top holders are fresh wallets\n\n" +
-        "/funded `<contract>`\n" +
-        "  Analyze funding sources of top holders\n\n" +
-        "/bundle `<contract>`\n" +
-        "  Detect bundled buys at token launch\n\n" +
-        "/early `<contract>`\n" +
-        "  First buyers of a pump\\.fun token\n\n" +
-        "*Token Info:*\n" +
-        "/dex `<contract>`\n" +
-        "  Token info from DEXScreener\n\n" +
-        "/hmap\n" +
-        "  Market heatmap \\(top 30 coins, 24h change\\)\n\n" +
-        "/graduated\n" +
-        "  Recently graduated pump\\.fun tokens\n\n" +
-        "/img `<contract>`\n" +
-        "  Reverse image search the token icon\n\n" +
-        "/hscan `<contract>`\n" +
-        "  Holder count history\n\n" +
-        "*Research Tools:*\n" +
-        "/twitter `<handle>`\n" +
-        "  Twitter handle history \\(coming soon\\)\n\n" +
-        "/site `<url>`\n" +
-        "  Website similarity check \\(coming soon\\)",
-      { parse_mode: "MarkdownV2" }
+      "🐺 <b>ApexPredator_sol Commands</b>\n\n" +
+        "<b>On-chain Analysis:</b>\n" +
+        "/kol <code>&lt;ca1&gt; &lt;ca2&gt; [ca3]</code>\n" +
+        "  Find wallets that hold ALL given tokens (max 3)\n\n" +
+        "/top20 <code>&lt;contract&gt;</code> - Top 20 holders + holdings\n" +
+        "/top50 <code>&lt;contract&gt;</code> - Top 50 holders + holdings\n" +
+        "/wallet <code>&lt;address&gt;</code> - Swap history of a wallet\n" +
+        "/fresh <code>&lt;contract&gt;</code> - Fresh wallets among top holders\n" +
+        "/funded <code>&lt;contract&gt;</code> - Funding sources of top holders\n" +
+        "/bundle <code>&lt;contract&gt;</code> - Detect bundled buys at launch\n" +
+        "/early <code>&lt;contract&gt;</code> - First buyers of pump.fun token\n\n" +
+        "<b>Token Info:</b>\n" +
+        "/dex <code>&lt;contract&gt;</code> - DEXScreener info\n" +
+        "/hmap - Market heatmap (top 30, 24h)\n" +
+        "/graduated - Recently graduated pump.fun tokens\n" +
+        "/img <code>&lt;contract&gt;</code> - Reverse image search token icon\n" +
+        "/hscan <code>&lt;contract&gt;</code> - Holder count history\n\n" +
+        "<b>Research Tools:</b>\n" +
+        "/twitter <code>&lt;handle&gt;</code> - Twitter history (stub)\n" +
+        "/site <code>&lt;url&gt;</code> - Website similarity (stub)",
+      { parse_mode: "HTML" }
     );
   });
 
@@ -101,6 +89,7 @@ export function createBot(): Bot {
   bot.command("site", handleSite);
   bot.command("img", handleImg);
   bot.command("hscan", handleHscan);
+  bot.command("snipers", handleSnipers);
 
   // Error handler
   bot.catch((err) => {

@@ -51,6 +51,9 @@ export async function getTokenHolders(
     });
 
     const json = (await res.json()) as any;
+    if (json.error) {
+      throw new Error(`Helius RPC error: ${json.error.message || json.error.code}`);
+    }
     if (!json.result) break;
 
     const accounts = json.result.token_accounts || [];

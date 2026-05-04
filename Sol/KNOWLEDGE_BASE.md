@@ -6,6 +6,27 @@
 
 ## Errores Resueltos
 
+### 8. /wallet mostraba SOL amounts ~0 en todos los trades (2026-04-15)
+- **Error**: Todos los trades mostraban "In: 0.00 SOL → Out: 0.00 SOL"
+- **Causa**: El SOL de un swap NO está en `nativeTransfers` — ahí solo van fees/rent (~0.002 SOL). El SOL real está en `tokenTransfers` con `mint === "So111...112"` (wSOL)
+- **Solución**: Calcular `solSent` y `solReceived` filtrando `tokenTransfers` por `mint === SOL_MINT` y `fromUserAccount/toUserAccount === address`
+
+### 9. /wallet mostraba "FUNGIBLE" en vez del símbolo del token (2026-04-15)
+- **Error**: Todos los tokens aparecían como "FUNGIBLE"
+- **Causa**: Helius Enhanced API devuelve `tokenStandard: "Fungible"` en los tokenTransfers, no el símbolo real
+- **Solución**: Resolver símbolos post-proceso via DexScreener batch (`/latest/dex/tokens/<mint1>,<mint2>,...`, hasta 30 mints por llamada). Si DexScreener no devuelve símbolo (token muy nuevo sin par), usar los primeros 6 chars del mint como fallback
+
+### 10. /kol con 1 contrato devolvía 0 wallets (2026-04-15)
+- **Error**: "No wallets found holding all 1 tokens. 0 dust/bot wallets were filtered."
+- **Causa 1**: Helius API key agotada (`max usage reached`) — el bot no lo reportaba, devolvía 0 silenciosamente
+- **Causa 2**: Filtro dust 0.005% demasiado agresivo para tokens con muchos holders pequeños
+- **Solución**: (1) Lanzar error explícito cuando Helius devuelve `json.error`. (2) Con 1 solo CA, no aplicar filtro dust (umbral = 0). Con 2-3 CAs, bajar a 0.001%.
+
+### 11. /start y /help rompían con MarkdownV2 (2026-04-15)
+- **Error**: `400: Character '>' is reserved and must be escaped`
+- **Causa**: Los textos `/kol <ca1> <ca2>` contienen `<` y `>` que MarkdownV2 requiere escapar incluso dentro de backticks
+- **Solución**: Cambiar `/start` y `/help` a `parse_mode: "HTML"` — mucho más robusto para textos de ayuda con `<param>`. Usar `&lt;` y `&gt;` para los ángulos.
+
 ### 4. /bundle no detectaba bundles (2026-03-16)
 - **Error**: Siempre devolvía "NOT BUNDLED"
 - **Causa**: `getSignaturesForAddress(mintAddress)` devuelve tx que modifican la cuenta del MINT (minting), NO transacciones de compra. Las compras van contra el pool de Raydium/pump.fun

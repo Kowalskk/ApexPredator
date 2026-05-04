@@ -1,98 +1,98 @@
 # ApexPredator_sol - Telegram Bot para Solana On-Chain Analytics
 
 ## Descripción
-Bot de Telegram que proporciona utilidades de análisis on-chain en Solana. Se construye de forma incremental, añadiendo utilidades una a una.
+Bot de Telegram de analytics on-chain en Solana. Uso propio. Inspirado en Mugetsu bot pero gratuito y con umbral de holders >$5 (vs $25K de Mugetsu).
 
 ## Stack Tecnológico
 - **Runtime**: Node.js 20+ con TypeScript
-- **Bot Framework**: grammY (moderno, TypeScript-first, mejor que node-telegram-bot-api)
+- **Bot Framework**: grammY
 - **API Principal**: Helius (free tier: 1M credits/mes, 10 RPS)
-- **API Secundaria**: Birdeye (cuando necesitemos precios USD nativos)
-- **Precios**: Jupiter Price API (gratuito) como fuente principal de precios USD
-- **Base de datos**: SQLite via better-sqlite3 (ligero, sin servidor externo)
+- **Precios SOL/tokens**: Jupiter Price API (gratuito, sin API key)
+- **Token info**: DexScreener API (gratuito)
+- **Market data**: CoinGecko (gratuito, throttle 1 RPS)
+- **Heatmap**: quickchart.io (gratuito, devuelve PNG)
 
 ## Arquitectura
 ```
 src/
-├── index.ts              # Entry point, inicializa bot
-├── bot.ts                # Configuración del bot de Telegram
-├── config.ts             # Variables de entorno y configuración
-├── commands/             # Handlers de comandos
-│   ├── kol.ts            # /kol - Buscar wallets que tradearon N tokens
-│   ├── top20.ts          # /top20 - Top 20 holders + portfolio
-│   └── top50.ts          # /top50 - Top 50 holders + portfolio
-├── services/             # Lógica de negocio
-│   ├── helius.ts         # Cliente Helius API
-│   ├── jupiter.ts        # Jupiter Price API para USD values
-│   └── birdeye.ts        # Cliente Birdeye (futuro)
-├── utils/                # Utilidades
-│   ├── format.ts         # Formateo de mensajes para Telegram
-│   ├── solana.ts         # Validación de direcciones Solana
-│   └── cache.ts          # Cache simple en memoria con TTL
-└── types/                # TypeScript types
-    └── index.ts          # Interfaces y tipos compartidos
+├── index.ts              # Entry point — arranca bot + health check Helius al inicio
+├── bot.ts                # Registro de comandos, /start y /help en HTML parse mode
+├── config.ts             # Variables de entorno
+├── commands/             # Handlers (16 comandos)
+├── services/
+│   ├── helius.ts         # getTokenHolders, getTopHolders, getWalletAssets, findCommonHolders, checkIsLpWallet
+│   ├── helius_extended.ts # getWalletPnl, checkWalletAge, getWalletFirstFunder, detectBundledWallets
+│   ├── dexscreener.ts    # getTokenInfo, getTokenMetadata — también resuelve símbolos reales
+│   ├── jupiter.ts        # getTokenPrices (batch, hasta 100 mints)
+│   ├── coingecko.ts      # getTopCoinsHeatmap
+│   ├── pumpfun.ts        # getRecentGraduated, getTokenEarlyBuyers (multi-endpoint fallback)
+│   ├── labels.ts         # classifyWallet — 30+ CEX addresses, whale/fresh/degen emojis
+│   └── birdeye.ts        # PLACEHOLDER — no implementado
+├── utils/
+│   ├── format.ts         # escMd, splitMessage, formatUsd, formatAmount
+│   ├── solana.ts         # isValidSolanaAddress, shortenAddress
+│   └── cache.ts          # TTL cache en memoria (5 min default)
+└── types/index.ts        # Todos los tipos: TokenHolder, TokenHolding, WalletPnlResult, etc.
 ```
 
-## Comandos
+## Comandos — Estado real (2026-04-15)
 
-### Implementados ✅
-- [x] `/kol <ca1> <ca2> [ca3]` - Encuentra wallets que tradearon TODOS los tokens (máx 3)
-- [x] `/top20 <ca>` - Top 20 holders + holdings >$5
-- [x] `/top50 <ca>` - Top 50 holders + holdings >$5
+### ✅ Funcionales
+- `/kol <ca1> <ca2> [ca3]` — Intersección de holders. Con 1 CA muestra todos (sin filtro dust). Con 2-3 CAs filtra >0.001%. Dirección completa copiable debajo de cada wallet.
+- `/top20 <ca>` / `/top50 <ca>` — Top holders con LP detection, whale/fresh emojis, supply real, portfolio por wallet
+- `/wallet <address>` — PnL completo: swaps (SOL in/out desde wSOL en tokenTransfers), winrate, LP activity, transfers salientes. Símbolos resueltos via DexScreener batch.
+- `/fresh <ca>` — Detecta wallets con <20 tx o <30 días entre top 50
+- `/funded <ca>` — Detecta funders compartidos entre top 30
+- `/bundle <ca>` — pump.fun trades (ventana 2s) + Helius fallback
+- `/dex <ca>` — DexScreener price/mcap/vol/liq/socials
+- `/hmap` — CoinGecko + quickchart.io PNG (fallback texto)
+- `/img <ca>` — Link Google Lens con imagen del token
 
-### Roadmap (inspirado en Mugetsu, ver KNOWLEDGE_BASE.md)
-**Fase 2 - Wallet Intelligence:**
-- [ ] `/wallet <address>` - Análisis PnL de las últimas 300 tx de una wallet
-- [ ] `/fresh <ca>` - Detectar wallets nuevas (< 20 tx) entre los holders
-- [ ] `/funded <ca>` - Analizar origen de fondeo de wallets holders (detectar coordinación)
+### 🟡 Funcionales pero frágiles
+- `/early <ca>` — pump.fun frontend-api (puede caducar)
+- `/graduated` — pump.fun frontend-api (mismo riesgo)
+- `/hscan <ca>` — holderscan.io scraping no oficial
 
-**Fase 3 - Scam Detection:**
-- [ ] `/bundle <ca>` - Detectar si el token fue bundled al deploy (mismas wallets, mismo slot)
-- [ ] `/early <ca>` - Early buyers de pump.fun (snipers/insiders)
-- [ ] `/dex <ca>` - Verificar si el token tiene info actualizada en DEXScreener
-
-**Fase 4 - Social/Web OSINT:**
-- [ ] `/twitter <handle>` - Historial de cambios de nombre de una cuenta de Twitter/X
-- [ ] `/site <url>` - Buscar webs duplicadas/template reuse (detección de rugs)
-- [ ] `/img <ca>` - Reverse image search del token image via Google Lens
-
-**Fase 5 - Market Overview:**
-- [ ] `/hmap` - Heatmap de rendimiento diario de las top cryptos
-- [ ] `/graduated` - Últimos 10 tokens graduados de pump.fun + ATH mcap
-- [ ] `/hscan <ca>` - Evolución del número de holders en el tiempo
-
-## APIs y Endpoints Clave
-
-### Helius (Free Tier)
-- `getTokenAccounts` - Obtener holders de un token por mint address (paginado, 1000/página)
-- `getAssetsByOwner` (DAS API) - Portfolio de una wallet (2 RPS en free tier)
-- Rate limit: 10 RPS general, 2 RPS para DAS API
-
-### Jupiter Price API (Gratuito)
-- `GET https://api.jup.ag/price/v2?ids=<mint1>,<mint2>,...` - Precios en USD
-- Sin API key, rate limits generosos
+### ❌ Stubs
+- `/twitter <handle>` — Solo link a memory.lol
+- `/site <url>` — Solo link a sitelike.org
 
 ## Decisiones de Diseño
-1. **Helius sobre Birdeye/Nansen**: Free tier viable (1M credits, 10 RPS). Birdeye free tier es 30K CUs + 1 RPS. Nansen da 100 créditos one-time.
-2. **grammY sobre node-telegram-bot-api**: Mejor tipado, middleware system, más mantenido.
-3. **Jupiter para precios**: Gratuito, sin API key, datos de DEX en tiempo real.
-4. **Cache en memoria**: Evitar llamadas repetidas a APIs, TTL de 5 min.
+1. **`/start` y `/help` en HTML parse mode** — MarkdownV2 rompe con `<ca>` sin escapar. HTML es más robusto para textos con `<>`.
+2. **SOL amount en swaps desde `tokenTransfers` con `mint === SOL_MINT`**, no desde `nativeTransfers` (que solo contiene fees/rent de ~0.002 SOL).
+3. **Símbolos resueltos post-proceso via DexScreener batch** — Helius devuelve `tokenStandard: "Fungible"` en vez del símbolo real.
+4. **`/kol` con 1 CA no filtra dust** — Con 1 solo token el filtro 0.005% vaciaba los resultados.
+5. **Health check Helius al arrancar** — `index.ts` llama `getSlot` al inicio y loggea si la API key está quemada.
+6. **Deps limpios**: `helius-sdk` y `better-sqlite3` eliminados — no se usan (todo es fetch directo).
 
-## Convenciones
-- Mensajes del bot en inglés (estándar crypto)
-- Usar MarkdownV2 para formatear respuestas en Telegram
-- Manejar errores con mensajes claros al usuario
-- Respetar rate limits con delays entre llamadas
-- No enviar más de 4096 caracteres por mensaje (límite Telegram), paginar si es necesario
+## Gotchas conocidos
+- **Helius free tier: 1M créditos/mes** — se agota. Cada `/wallet` consume ~300 créditos. El bot loggea `⚠️ max usage reached` si se agota.
+- **Una sola instancia**: grammY da error 409 si hay dos instancias corriendo. Matar con `Get-Process node | Stop-Process -Force` antes de reiniciar.
+- **tsx watch no recarga `.env`** — cambiar API key requiere matar y relanzar el proceso.
+- **pump.fun endpoints** pueden cambiar — `pumpfun.ts` tiene multi-endpoint fallback.
 
-## Referencia
-- **Competencia**: Mugetsu bot (@the_mugetsu_bot) - 1 SOL/mes, 15 comandos, SOL+ETH
-- **Diferenciación**: ApexPredator es gratuito, umbral bajo ($5 vs $25K), solo Solana
-- **Knowledge Base**: Ver KNOWLEDGE_BASE.md para errores resueltos y notas técnicas
+## APIs y créditos estimados
+| Comando | Créditos Helius aprox. |
+|---|---|
+| `/kol` (1 CA, 5000 holders) | ~5-10 |
+| `/top20` | ~25 (1 DAS por holder) |
+| `/top50` | ~55 |
+| `/wallet` | ~300 (SWAP+TRANSFER+LP x100 txs) |
+| `/fresh` / `/funded` | ~50-60 |
+| `/bundle` | ~5 |
 
 ## Variables de Entorno (.env)
+Ver `.env.example`:
 ```
 TELEGRAM_BOT_TOKEN=
 HELIUS_API_KEY=
 BIRDEYE_API_KEY=    # futuro
+```
+
+## Setup
+```
+npm install
+npm run build
+npm run dev   # tsx watch — recarga en cambios .ts
+npm start     # node dist/index.js — producción
 ```

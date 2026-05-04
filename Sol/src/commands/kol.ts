@@ -27,7 +27,7 @@ export async function handleKol(ctx: Context): Promise<void> {
   if (args.length === 0 || args.length > config.maxContracts) {
     await ctx.reply(
       `📖 *KOL Finder*\n\n` +
-      `Usage: /kol <ca1> <ca2> \\[ca3\\]\n\n` +
+      `Usage: /kol \\<ca1\\> \\<ca2\\> \\[ca3\\]\n\n` +
       `Finds wallets that hold ALL given tokens\\.\n` +
       `Bots and dust wallets are automatically filtered\\.\n\n` +
       `Max ${config.maxContracts} contracts\\.`,
@@ -51,7 +51,7 @@ export async function handleKol(ctx: Context): Promise<void> {
     // Fetch token symbols + KOL results in parallel
     const [tokenInfos, result] = await Promise.all([
       Promise.all(args.map((mint) => getTokenInfo(mint).catch(() => null))),
-      findCommonHolders(args, 5000, 0.005),
+      findCommonHolders(args, 5000, args.length === 1 ? 0 : 0.001),
     ]);
 
     const symbols = args.map((_, i) => tokenInfos[i]?.symbol || `Token${i + 1}`);
@@ -80,7 +80,7 @@ export async function handleKol(ctx: Context): Promise<void> {
     lines.push(
       `Found: *${escMd(String(sorted.length))}* wallets  ` +
       `\\(_${escMd(String(result.filteredCount))} dust filtered_\\)\n` +
-      `Min holding: 0\\.005% per token\n`
+      `Min holding: ${args.length === 1 ? "none" : "0\\.001%"} per token\n`
     );
 
     // Wallet entries (cap at 50 to keep message manageable)
@@ -99,11 +99,13 @@ export async function handleKol(ctx: Context): Promise<void> {
 
       const displayName = exchangeName
         ? `*${escMd(exchangeName)}*`
-        : `\`${escMd(shortenAddress(w.address, 6))}\``;
+        : `[${escMd(shortenAddress(w.address, 4))}](https://solscan\\.io/account/${escMd(w.address)})`;
 
       const solscanLink = `[↗](https://solscan\\.io/account/${escMd(w.address)})`;
 
       lines.push(`*${i + 1}\\.* ${displayName} ${solscanLink} ${emojis}`);
+      // Full address on its own line for easy copy
+      lines.push(`\`${escMd(w.address)}\``);
 
       // Show holdings for each token
       for (let j = 0; j < w.holdings.length; j++) {
