@@ -130,27 +130,53 @@ export async function isContract(address: string, chain: string): Promise<boolea
   }
 }
 
-// ─── Bot detection via tx count (Moralis wallet stats) ───────────────────────
+// ─── Bot detection via Moralis wallet stats ──────────────────────────────────
+// Two heuristics:
+//  - `transactions.total` > 50K       => high-frequency trader bot (MEV, arb)
+//  - `token_transfers.total` > 50K    => relay/router contract that receives
+//                                         millions of token transfers but
+//                                         does not initiate tx itself
+// A real human KOL rarely exceeds either threshold.
 
-const BOT_TX_THRESHOLD = 50_000; // wallets with more tx than this are MEV/arb bots
+const BOT_TX_THRESHOLD = 50_000;
+const BOT_TRANSFER_THRESHOLD = 50_000;
 
-export async function getWalletTxCount(address: string, chain: string): Promise<number> {
-  const cacheKey = `txcount:${chain}:${address.toLowerCase()}`;
-  const cached = cacheGet<number>(cacheKey);
+export interface WalletActivity {
+  txCount: number;
+  tokenTransferCount: number;
+}
+
+export async function getWalletActivity(
+  address: string,
+  chain: string
+): Promise<WalletActivity> {
+  const cacheKey = `activity:${chain}:${address.toLowerCase()}`;
+  const cached = cacheGet<WalletActivity>(cacheKey);
   if (cached !== undefined && cached !== null) return cached;
 
-  if (!config.moralisApiKey) return 0;
+  const empty: WalletActivity = { txCount: 0, tokenTransferCount: 0 };
+  if (!config.moralisApiKey) return empty;
   try {
     const url = `https://deep-index.moralis.io/api/v2.2/wallets/${address}/stats?chain=${chain}`;
     const res = await fetch(url, { headers: { "X-API-Key": config.moralisApiKey } });
-    if (!res.ok) return 0;
+    if (!res.ok) return empty;
     const json = (await res.json()) as any;
-    const count = Number(json.transactions?.total ?? json.transactions?.count ?? 0) || 0;
-    cacheSet(cacheKey, count, 60 * 60 * 1000); // 1h TTL
-    return count;
+    const result: WalletActivity = {
+      txCount: Number(json.transactions?.total ?? json.transactions?.count ?? 0) || 0,
+      tokenTransferCount: Number(json.token_transfers?.total ?? json.token_transfers?.count ?? 0) || 0,
+    };
+    cacheSet(cacheKey, result, 60 * 60 * 1000); // 1h TTL
+    return result;
   } catch {
-    return 0;
+    return empty;
   }
+}
+
+export function looksLikeBot(activity: WalletActivity): boolean {
+  return (
+    activity.txCount >= BOT_TX_THRESHOLD ||
+    activity.tokenTransferCount >= BOT_TRANSFER_THRESHOLD
+  );
 }
 
 /**
@@ -179,11 +205,11 @@ export async function filterEoaTraders(
   );
   const eoas = codeResults.filter((r) => !r.isC).map((r) => r.addr);
 
-  // Pass 4: tx count — bot detection
-  const txCounts = await Promise.all(
-    eoas.map((a) => getWalletTxCount(a, chain).then((c) => ({ addr: a, c })))
+  // Pass 4: activity check — drop bots / relays / aggregators
+  const activities = await Promise.all(
+    eoas.map((a) => getWalletActivity(a, chain).then((act) => ({ addr: a, act })))
   );
-  const kept = txCounts.filter((r) => r.c < BOT_TX_THRESHOLD).map((r) => r.addr);
+  const kept = activities.filter((r) => !looksLikeBot(r.act)).map((r) => r.addr);
 
   return { kept, filtered: addresses.length - kept.length };
 }
