@@ -21,12 +21,12 @@ export async function handleEvmKol(ctx: Context, mints: string[]): Promise<void>
 
     await ctx.api.editMessageText(
       ctx.chat!.id, statusMsg.message_id,
-      `🔍 Fetching on ${chain.toUpperCase()}: top 500 holders + last 1000 transfers per token...`
+      `🔍 Fetching on ${chain.toUpperCase()}: top 500 holders + last 5000 transfers per token...`
     );
 
     // Fetch buyers (last 1000 transfers) + current holders (top 500) + token info in parallel
     const [buyerSets, holderSets, tokenInfos] = await Promise.all([
-      Promise.all(mints.map((m) => getEvmTokenBuyers(m, chain, 10).catch(() => new Set<string>()))),
+      Promise.all(mints.map((m) => getEvmTokenBuyers(m, chain, 50).catch(() => new Set<string>()))),
       Promise.all(mints.map((m) => getEvmTopHolders(m, chain, 500).catch(() => []))),
       Promise.all(mints.map((m) => getTokenInfo(m).catch(() => null))),
     ]);

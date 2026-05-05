@@ -130,12 +130,36 @@ export async function isContract(address: string, chain: string): Promise<boolea
   }
 }
 
+// ─── Bot detection via tx count (Moralis wallet stats) ───────────────────────
+
+const BOT_TX_THRESHOLD = 50_000; // wallets with more tx than this are MEV/arb bots
+
+export async function getWalletTxCount(address: string, chain: string): Promise<number> {
+  const cacheKey = `txcount:${chain}:${address.toLowerCase()}`;
+  const cached = cacheGet<number>(cacheKey);
+  if (cached !== undefined && cached !== null) return cached;
+
+  if (!config.moralisApiKey) return 0;
+  try {
+    const url = `https://deep-index.moralis.io/api/v2.2/wallets/${address}/stats?chain=${chain}`;
+    const res = await fetch(url, { headers: { "X-API-Key": config.moralisApiKey } });
+    if (!res.ok) return 0;
+    const json = (await res.json()) as any;
+    const count = Number(json.transactions?.total ?? json.transactions?.count ?? 0) || 0;
+    cacheSet(cacheKey, count, 60 * 60 * 1000); // 1h TTL
+    return count;
+  } catch {
+    return 0;
+  }
+}
+
 /**
  * Filter a list of candidate addresses, returning only those that look like
- * real EOA traders. Uses 3 layers in order of cost:
+ * real EOA traders. Uses 4 layers in order of cost:
  * 1. Known contracts blacklist (instant)
  * 2. Vanity heuristics (instant)
- * 3. eth_getCode batch (cached) — only if not already filtered
+ * 3. eth_getCode (cached, RPC call) — drops contracts
+ * 4. Tx count (Moralis stats) — drops MEV/arb bots (>50K txs)
  */
 export async function filterEoaTraders(
   addresses: string[],
@@ -149,10 +173,17 @@ export async function filterEoaTraders(
     return true;
   });
 
-  // Pass 3: on-chain check — parallelize, but be respectful (max 20 concurrent)
-  const results = await Promise.all(
+  // Pass 3: getCode in parallel
+  const codeResults = await Promise.all(
     candidates.map((a) => isContract(a, chain).then((isC) => ({ addr: a, isC })))
   );
-  const kept = results.filter((r) => !r.isC).map((r) => r.addr);
+  const eoas = codeResults.filter((r) => !r.isC).map((r) => r.addr);
+
+  // Pass 4: tx count — bot detection
+  const txCounts = await Promise.all(
+    eoas.map((a) => getWalletTxCount(a, chain).then((c) => ({ addr: a, c })))
+  );
+  const kept = txCounts.filter((r) => r.c < BOT_TX_THRESHOLD).map((r) => r.addr);
+
   return { kept, filtered: addresses.length - kept.length };
 }
