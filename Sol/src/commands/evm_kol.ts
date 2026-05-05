@@ -12,21 +12,66 @@ const CHAIN_EXPLORERS: Record<string, string> = {
   arbitrum: "https://arbiscan.io/address/",
 };
 
-export async function handleEvmKol(ctx: Context, mints: string[]): Promise<void> {
+// Parse "desde:YYYY-MM-DD" or "desde:marzo" / "desde:march" from args
+function parseFromDate(args: string[]): { mints: string[]; fromDate?: Date } {
+  const MONTH_MAP: Record<string, number> = {
+    enero: 0, january: 0, jan: 0,
+    febrero: 1, february: 1, feb: 1,
+    marzo: 2, march: 2, mar: 2,
+    abril: 3, april: 3, apr: 3,
+    mayo: 4, may: 4,
+    junio: 5, june: 5, jun: 5,
+    julio: 6, july: 6, jul: 6,
+    agosto: 7, august: 7, aug: 7,
+    septiembre: 8, september: 8, sep: 8,
+    octubre: 9, october: 9, oct: 9,
+    noviembre: 10, november: 10, nov: 10,
+    diciembre: 11, december: 11, dec: 11,
+  };
+
+  let fromDate: Date | undefined;
+  const mints: string[] = [];
+
+  for (const arg of args) {
+    const lower = arg.toLowerCase();
+    if (lower.startsWith("desde:") || lower.startsWith("from:")) {
+      const val = lower.split(":")[1];
+      // YYYY-MM-DD
+      if (/^\d{4}-\d{2}-\d{2}$/.test(val)) {
+        fromDate = new Date(val + "T00:00:00Z");
+      } else if (MONTH_MAP[val] !== undefined) {
+        // "marzo" → first day of that month in current year
+        const now = new Date();
+        fromDate = new Date(Date.UTC(now.getFullYear(), MONTH_MAP[val], 1));
+      }
+    } else {
+      mints.push(arg);
+    }
+  }
+
+  return { mints, fromDate };
+}
+
+export async function handleEvmKol(ctx: Context, rawArgs: string[]): Promise<void> {
+  const { mints, fromDate } = parseFromDate(rawArgs);
   const statusMsg = await ctx.reply(`🔍 Detecting chain and fetching buyers for ${mints.length} tokens...`);
 
   try {
     const chain = await detectEvmChain(mints[0]);
     const explorer = CHAIN_EXPLORERS[chain] || "https://etherscan.io/address/";
 
+    const rangeLabel = fromDate
+      ? `desde ${fromDate.toISOString().slice(0, 7)}`
+      : "últimas 10K transfers";
+
     await ctx.api.editMessageText(
       ctx.chat!.id, statusMsg.message_id,
-      `🔍 Fetching on ${chain.toUpperCase()}: top 500 holders + last 5000 transfers per token...`
+      `🔍 Fetching on ${chain.toUpperCase()}: top 500 holders + transfers ${rangeLabel} per token...`
     );
 
-    // Fetch buyers (last 1000 transfers) + current holders (top 500) + token info in parallel
+    // Fetch buyers + current holders + token info in parallel
     const [buyerSets, holderSets, tokenInfos] = await Promise.all([
-      Promise.all(mints.map((m) => getEvmTokenBuyers(m, chain, 50).catch(() => new Set<string>()))),
+      Promise.all(mints.map((m) => getEvmTokenBuyers(m, chain, 100, fromDate).catch(() => new Set<string>()))),
       Promise.all(mints.map((m) => getEvmTopHolders(m, chain, 500).catch(() => []))),
       Promise.all(mints.map((m) => getTokenInfo(m).catch(() => null))),
     ]);

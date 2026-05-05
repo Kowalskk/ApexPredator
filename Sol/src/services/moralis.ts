@@ -189,19 +189,25 @@ export async function getEvmTopHolders(
 }
 
 // ─── Token buyers (all wallets that ever received the token) ─────────────────
-// Uses ERC-20 transfers endpoint, paginates up to maxPages to get unique buyers.
+// Paginates ERC-20 transfers DESC. Stops when:
+//   - no more cursor, OR
+//   - fromDate set and last transfer in page is older than fromDate, OR
+//   - maxPages reached (safety cap — default 100 = 10K transfers)
 
 export async function getEvmTokenBuyers(
   tokenAddress: string,
   chain: string = "eth",
-  maxPages = 5
+  maxPages = 100,
+  fromDate?: Date
 ): Promise<Set<string>> {
-  const cacheKey = `moralis:buyers:${chain}:${tokenAddress}`;
+  const dateKey = fromDate ? fromDate.toISOString().slice(0, 10) : "all";
+  const cacheKey = `moralis:buyers:${chain}:${tokenAddress}:${dateKey}`;
   const cached = cacheGet<string[]>(cacheKey);
   if (cached) return new Set(cached);
 
   const buyers = new Set<string>();
   let cursor: string | null = null;
+  const fromMs = fromDate ? fromDate.getTime() : 0;
 
   for (let page = 0; page < maxPages; page++) {
     const params = new URLSearchParams({ chain, limit: "100", order: "DESC" });
@@ -211,12 +217,20 @@ export async function getEvmTokenBuyers(
     if (!res.ok) break;
     const json = (await res.json()) as any;
     const transfers: any[] = json.result || [];
+    if (transfers.length === 0) break;
+
+    let reachedDate = false;
     for (const t of transfers) {
+      if (fromMs > 0) {
+        const ts = t.blockTimestamp ? new Date(t.blockTimestamp).getTime() : Infinity;
+        if (ts < fromMs) { reachedDate = true; break; }
+      }
       const to = t.toAddress || t.to_address;
       if (to) buyers.add(to.toLowerCase());
     }
+
     cursor = json.cursor || null;
-    if (!cursor || transfers.length === 0) break;
+    if (reachedDate || !cursor) break;
   }
 
   cacheSet(cacheKey, Array.from(buyers), config.cacheTtl);

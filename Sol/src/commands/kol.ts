@@ -26,24 +26,26 @@ export async function handleKol(ctx: Context): Promise<void> {
   // Support both space and newline as separator
   const args = text.trim().split(/[\s\n]+/).slice(1).filter(Boolean);
 
-  if (args.length === 0 || args.length > config.maxContracts) {
+  const mintArgs = args.filter((a) => !a.toLowerCase().startsWith("desde:") && !a.toLowerCase().startsWith("from:"));
+  if (mintArgs.length === 0 || mintArgs.length > config.maxContracts) {
     await ctx.reply(
       `📖 *KOL Finder*\n\n` +
-      `Usage: /kol \\<ca1\\> \\<ca2\\> \\[ca3\\]\n\n` +
+      `Usage: /kol \\<ca1\\> \\<ca2\\> \\[ca3\\] \\[desde:YYYY\\-MM\\-DD\\]\n\n` +
       `Finds wallets that hold ALL given tokens\\.\n` +
       `Bots and dust wallets are automatically filtered\\.\n\n` +
+      `EVM: agrega \`desde:marzo\` o \`desde:2026\\-03\\-01\` para cubrir un período\\.\n\n` +
       `Max ${config.maxContracts} contracts\\.`,
       { parse_mode: "MarkdownV2" }
     );
     return;
   }
 
-  // Route to EVM handler if addresses are 0x...
-  if (args.every((a) => isValidEvmAddress(a))) {
+  // Route to EVM handler if all CA args are 0x...
+  if (mintArgs.every((a) => isValidEvmAddress(a))) {
     return handleEvmKol(ctx, args);
   }
 
-  const invalid = args.filter((a) => !isValidSolanaAddress(a));
+  const invalid = mintArgs.filter((a) => !isValidSolanaAddress(a));
   if (invalid.length > 0) {
     await ctx.reply(`❌ Invalid address: ${invalid[0].slice(0, 12)}...`);
     return;
