@@ -77,31 +77,62 @@ export interface RawLog {
 
 const TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 
+// Versión robusta: si Ankr devuelve error "Block range is too large" o similar,
+// reduce el chunk a la mitad y reintenta. Empieza con chunks de 2000 (probado).
 export async function getTransferLogs(
   tokenAddress: string,
   chain: string,
   fromBlock: number,
   toBlock: number,
-  chunkSize = 5000
+  initialChunk = 2000
 ): Promise<RawLog[]> {
   const key = `ankr:logs:${chain}:${tokenAddress.toLowerCase()}:${fromBlock}-${toBlock}`;
   const cached = cacheGet<RawLog[]>(key);
   if (cached) return cached;
 
-  const allLogs: RawLog[] = [];
-  let cursor = fromBlock;
-  while (cursor <= toBlock) {
-    const end = Math.min(cursor + chunkSize - 1, toBlock);
-    const logs = await rpcCall<RawLog[]>(chain, "eth_getLogs", [{
-      address: tokenAddress,
-      topics: [TRANSFER_TOPIC],
-      fromBlock: "0x" + cursor.toString(16),
-      toBlock: "0x" + end.toString(16),
-    }]);
-    if (logs && Array.isArray(logs)) allLogs.push(...logs);
-    cursor = end + 1;
+  async function fetchRange(from: number, to: number, chunk: number): Promise<RawLog[]> {
+    const out: RawLog[] = [];
+    let cursor = from;
+    while (cursor <= to) {
+      const end = Math.min(cursor + chunk - 1, to);
+      // rpcCall returns null on any error (including "range too large")
+      let logs: RawLog[] | null = null;
+      try {
+        const res = await fetch(rpcUrl(chain), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_getLogs", params: [{
+            address: tokenAddress, topics: [TRANSFER_TOPIC],
+            fromBlock: "0x" + cursor.toString(16), toBlock: "0x" + end.toString(16),
+          }] }),
+          signal: AbortSignal.timeout(20_000),
+        });
+        const j = (await res.json()) as any;
+        if (j.error) {
+          const msg = (j.error.message || "").toLowerCase();
+          // Retry con chunk más pequeño si es problema de tamaño
+          if (chunk > 100 && (msg.includes("too large") || msg.includes("limit") || msg.includes("eth_getlogs"))) {
+            const half = Math.floor(chunk / 2);
+            const sub = await fetchRange(cursor, end, half);
+            out.push(...sub);
+            cursor = end + 1;
+            continue;
+          }
+          // Otro error: log y skip
+          console.log(`[ankr getLogs] ${cursor}-${end} err: ${j.error.message}`);
+        } else if (Array.isArray(j.result)) {
+          logs = j.result;
+        }
+      } catch (e: any) {
+        console.log(`[ankr getLogs] ${cursor}-${end} fetch err: ${e?.message}`);
+      }
+      if (logs) out.push(...logs);
+      cursor = end + 1;
+    }
+    return out;
   }
 
+  const allLogs = await fetchRange(fromBlock, toBlock, initialChunk);
   cacheSet(key, allLogs, config.cacheTtl);
   return allLogs;
 }
