@@ -1,5 +1,6 @@
 import { Context } from "grammy";
-import { getEvmTokenBuyers, getEvmTopHolders } from "../services/moralis";
+import { getEvmTopHolders } from "../services/moralis";
+import { getTokenBuyersFromLogs } from "../services/ankr";
 import { getTokenInfo, detectEvmChain } from "../services/dexscreener";
 import { filterEoaTraders } from "../services/evm_filters";
 import { shortenEvmAddress, escHtml } from "../utils/evm";
@@ -119,20 +120,16 @@ export async function handleEvmKol(ctx: Context, rawArgs: string[]): Promise<voi
 
     let fromDate: Date | undefined;
     let rangeLabel: string;
-    let maxPages: number;
     let autoNote = "";
 
     if (userFromDate) {
       fromDate = userFromDate;
-      maxPages = 1000;
       rangeLabel = `desde ${fromDate.toISOString().slice(0, 10)}`;
     } else if (ageDays > 0 && ageDays <= 60) {
       fromDate = undefined;
-      maxPages = 1000;
       rangeLabel = `histórico completo (~${ageDays.toFixed(0)}d)`;
     } else {
       fromDate = new Date(now - 90 * DAY_MS);
-      maxPages = 500;
       const oldestDate = new Date(oldestCreated).toISOString().slice(0, 10);
       rangeLabel = "últimos 90 días";
       autoNote = `\n<i>⚠️ Token más antiguo: ${oldestDate} (${ageDays.toFixed(0)}d). Para ver todo el histórico usa <code>desde:YYYY-MM-DD</code>.</i>`;
@@ -149,7 +146,7 @@ export async function handleEvmKol(ctx: Context, rawArgs: string[]): Promise<voi
     const holderSets: any[][] = [];
     for (const m of mints) {
       const [bs, hs] = await Promise.all([
-        getEvmTokenBuyers(m, chain, maxPages, fromDate).catch((e) => {
+        getTokenBuyersFromLogs(m, chain, fromDate).catch((e: any) => {
           console.log(`[/kol] buyers ${m.slice(0, 10)} ERR:`, e?.message || e);
           return new Set<string>();
         }),

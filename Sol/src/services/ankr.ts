@@ -106,6 +106,45 @@ export async function getTransferLogs(
   return allLogs;
 }
 
+// Buyers de un token = unique `to` addresses en los Transfer logs desde el deploy.
+// Lookup directo via Ankr — sin depender de Moralis.
+export async function getTokenBuyersFromLogs(
+  tokenAddress: string,
+  chain: string,
+  fromDate?: Date
+): Promise<Set<string>> {
+  const dateKey = fromDate ? fromDate.toISOString().slice(0, 10) : "all";
+  const cacheKey = `ankr:buyers:${chain}:${tokenAddress.toLowerCase()}:${dateKey}`;
+  const cached = cacheGet<string[]>(cacheKey);
+  if (cached) return new Set(cached);
+
+  const [head, deployBlock] = await Promise.all([
+    getBlockNumber(chain),
+    getContractDeployBlock(tokenAddress, chain),
+  ]);
+
+  // Si fromDate viene, traducimos aproximadamente a bloque (~12s/bloque en ETH, ~3s en BSC)
+  let fromBlock = deployBlock;
+  if (fromDate) {
+    const SECS_PER_BLOCK: Record<string, number> = { eth: 12, bsc: 3, base: 2, arbitrum: 0.25 };
+    const spb = SECS_PER_BLOCK[chain] || 12;
+    const secsAgo = Math.floor((Date.now() - fromDate.getTime()) / 1000);
+    const blocksAgo = Math.floor(secsAgo / spb);
+    const dateBlock = Math.max(0, head - blocksAgo);
+    fromBlock = Math.max(deployBlock, dateBlock);
+  }
+
+  const logs = await getTransferLogs(tokenAddress, chain, fromBlock, head);
+  const buyers = new Set<string>();
+  for (const log of logs) {
+    if (log.topics.length < 3) continue;
+    const to = "0x" + log.topics[2].slice(-40);
+    buyers.add(to.toLowerCase());
+  }
+  cacheSet(cacheKey, Array.from(buyers), config.cacheTtl);
+  return buyers;
+}
+
 // Parse Transfer(from, to, value) log
 export function parseTransfer(log: RawLog): { from: string; to: string; value: bigint } {
   const from = "0x" + log.topics[1].slice(-40);
