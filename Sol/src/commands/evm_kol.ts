@@ -3,6 +3,7 @@ import { getEvmTopHolders } from "../services/moralis";
 import { getTokenBuyersFromLogs } from "../services/ankr";
 import { getTokenInfo, detectEvmChain } from "../services/dexscreener";
 import { filterEoaTraders } from "../services/evm_filters";
+import { getNativePriceUsd } from "../services/coingecko";
 import { shortenEvmAddress, escHtml } from "../utils/evm";
 import { splitMessage } from "../utils/format";
 import {
@@ -242,6 +243,7 @@ export async function handleEvmKol(ctx: Context, rawArgs: string[]): Promise<voi
         getWalletFunding(w, chain).catch(() => ({ source: "UNKNOWN" as const, label: null, funderAddress: null }))
       )
     );
+    const nativePriceUsd = await getNativePriceUsd(chain).catch(() => 0);
 
     interface DeepEntry {
       address: string;
@@ -307,11 +309,18 @@ export async function handleEvmKol(ctx: Context, rawArgs: string[]): Promise<voi
           continue;
         }
         const emoji = statusEmoji(s.status);
-        const mc = s.marketCapAtEntry > 0 ? `MC@entry: ${fmtNum(s.marketCapAtEntry)} ${nativeSym}` : "MC@entry: n/d";
+        const mcUsd = s.marketCapAtEntry * (nativePriceUsd || 0);
+        const mc = mcUsd > 0
+          ? `MC@entry: ${fmtUsd(mcUsd)}`
+          : (s.marketCapAtEntry > 0 ? `MC@entry: ${fmtNum(s.marketCapAtEntry)} ${nativeSym}` : "MC@entry: n/d");
         const supplyPct = s.pctSupplyBought > 0 ? `${s.pctSupplyBought.toFixed(3)}%` : "<0.001%";
         lines.push(`  ${branch} ${emoji} <b>${escHtml(p.symbol)}</b>`);
         lines.push(`     ├ Compró: <b>${fmtNum(s.totalBought)}</b> tokens (${supplyPct} supply)`);
-        lines.push(`     ├ Gastado aprox: <b>${fmtNum(s.nativeSpent)} ${nativeSym}</b> · ${mc}`);
+        const spentUsd = s.nativeSpent * (nativePriceUsd || 0);
+        const spentStr = spentUsd > 0
+          ? `${fmtNum(s.nativeSpent)} ${nativeSym} (${fmtUsd(spentUsd)})`
+          : `${fmtNum(s.nativeSpent)} ${nativeSym}`;
+        lines.push(`     ├ Gastado aprox: <b>${spentStr}</b> · ${mc}`);
         const ahora = p.holderPct > 0
           ? `${p.holderPct.toFixed(3)}% · ${fmtUsd(p.holderUsd)}`
           : `${fmtNum(s.currentBalance)} tokens`;

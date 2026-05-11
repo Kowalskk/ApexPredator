@@ -38,3 +38,30 @@ export async function getTopCoinsHeatmap(limit: number = 30): Promise<HeatmapCoi
   cacheSet(cacheKey, result, 5 * 60 * 1000); // 5 minute cache
   return result;
 }
+
+// Precio nativo en USD por chain. Cache 5 min.
+const COIN_ID: Record<string, string> = {
+  eth: "ethereum",
+  base: "ethereum",
+  arbitrum: "ethereum",
+  bsc: "binancecoin",
+};
+
+export async function getNativePriceUsd(chain: string): Promise<number> {
+  const id = COIN_ID[chain] || "ethereum";
+  const cacheKey = `gecko:nativePrice:${id}`;
+  const cached = cacheGet<number>(cacheKey);
+  if (cached != null) return cached;
+  try {
+    await geckoThrottle();
+    const url = `https://api.coingecko.com/api/v3/simple/price?ids=${id}&vs_currencies=usd`;
+    const res = await fetch(url);
+    if (!res.ok) return 0;
+    const j = (await res.json()) as any;
+    const price = Number(j?.[id]?.usd) || 0;
+    if (price > 0) cacheSet(cacheKey, price, 5 * 60 * 1000);
+    return price;
+  } catch {
+    return 0;
+  }
+}
