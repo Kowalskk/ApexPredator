@@ -137,6 +137,7 @@ export async function handleEvmKol(ctx: Context, rawArgs: string[]): Promise<voi
     const intersection = new Set<string>(
       [...first].filter((addr) => rest.every((s) => s.has(addr)))
     );
+    console.log(`[/kol] chain=${chain} sizes=${combinedSets.map(s=>s.size).join(",")} intersection=${intersection.size}`);
 
     // Filter out routers / aggregators / contracts — keep only EOA traders
     await ctx.api.editMessageText(
@@ -145,6 +146,7 @@ export async function handleEvmKol(ctx: Context, rawArgs: string[]): Promise<voi
     );
     const { kept, filtered } = await filterEoaTraders(Array.from(intersection), chain);
     const eoaSet = new Set(kept);
+    console.log(`[/kol] after filter: kept=${kept.length} filtered=${filtered}`);
 
     if (eoaSet.size === 0) {
       await ctx.api.editMessageText(
