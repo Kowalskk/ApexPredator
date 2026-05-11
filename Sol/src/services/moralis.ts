@@ -214,7 +214,10 @@ export async function getEvmTokenBuyers(
     if (cursor) params.set("cursor", cursor);
     const url = `${BASE_URL}/erc20/${tokenAddress}/transfers?${params}`;
     const res = await fetch(url, { headers: headers() });
-    if (!res.ok) break;
+    if (!res.ok) {
+      console.log(`[buyers] ${tokenAddress.slice(0,10)} page=${page} HTTP ${res.status}`);
+      break;
+    }
     const json = (await res.json()) as any;
     const transfers: any[] = json.result || [];
     if (transfers.length === 0) break;
