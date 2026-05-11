@@ -144,17 +144,23 @@ export async function handleEvmKol(ctx: Context, rawArgs: string[]): Promise<voi
       { parse_mode: "HTML" }
     );
 
-    // Fetch buyers + current holders in parallel
-    const [buyerSets, holderSets] = await Promise.all([
-      Promise.all(mints.map((m) => getEvmTokenBuyers(m, chain, maxPages, fromDate).catch((e) => {
-        console.log(`[/kol] buyers ${m.slice(0,10)} ERR:`, e?.message || e);
-        return new Set<string>();
-      }))),
-      Promise.all(mints.map((m) => getEvmTopHolders(m, chain, 500).catch((e) => {
-        console.log(`[/kol] holders ${m.slice(0,10)} ERR:`, e?.message || e);
-        return [];
-      }))),
-    ]);
+    // Fetch buyers + current holders SECUENCIAL por token (evita 429/500 de Moralis con bursts)
+    const buyerSets: Set<string>[] = [];
+    const holderSets: any[][] = [];
+    for (const m of mints) {
+      const [bs, hs] = await Promise.all([
+        getEvmTokenBuyers(m, chain, maxPages, fromDate).catch((e) => {
+          console.log(`[/kol] buyers ${m.slice(0, 10)} ERR:`, e?.message || e);
+          return new Set<string>();
+        }),
+        getEvmTopHolders(m, chain, 100).catch((e) => {
+          console.log(`[/kol] holders ${m.slice(0, 10)} ERR:`, e?.message || e);
+          return [];
+        }),
+      ]);
+      buyerSets.push(bs);
+      holderSets.push(hs);
+    }
     console.log(`[/kol] raw: buyers=${buyerSets.map(s=>s.size).join(",")} holders=${holderSets.map(h=>h.length).join(",")}`);
 
     const symbols = mints.map((_, i) => tokenInfos[i]?.symbol || `Token${i + 1}`);
