@@ -1,5 +1,6 @@
 import { cacheGet, cacheSet } from "../utils/cache";
 import { config } from "../config";
+import { persistLearnedLabel } from "./funder_lists";
 
 // Cliente Arkham Intelligence — versión simplificada (cache memoria, sin DB).
 // Adaptado de Documents/fresh/src/classify/arkham.ts
@@ -94,6 +95,17 @@ export async function resolveArkhamLabel(address: string, chain: string): Promis
       entityName,
       entityType,
     };
+    // Persistir a learned_labels.json para sobrevivir cuando expire la key
+    if (entityName || labelName) {
+      const chainName = chain === "eth" ? "ethereum" : chain;
+      persistLearnedLabel({
+        address: address.toLowerCase(),
+        chain: chainName,
+        funderType,
+        entityName,
+        labelName,
+      });
+    }
     cacheSet(key, result, 60 * 60 * 1000);
     return result;
   } catch {
