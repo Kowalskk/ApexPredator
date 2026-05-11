@@ -1,0 +1,20 @@
+[
+  {
+    "address": "0x1a44076050125825900e736c501f859c50fE728c",
+    "protocol": "layerzero-v2",
+    "label": "LayerZero v2 Endpoint (CREATE2 mismo en multi-chain)",
+    "chain": "bsc",
+    "role": "bridge",
+    "source": "layerzero-docs",
+    "last_verified": "2026-05-06"
+  },
+  {
+    "address": "0xB104f6a82CdcCb6f4f6f6Ba4f8E76aF5dF0AEc4D",
+    "protocol": "stargate-v2",
+    "label": "Stargate v2 Pool (BSC) — verificar antes de usar",
+    "chain": "bsc",
+    "role": "bridge",
+    "source": "stargate-docs-PENDING-VERIFY",
+    "last_verified": "2026-05-06"
+  }
+]

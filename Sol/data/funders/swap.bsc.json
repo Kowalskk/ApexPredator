@@ -1,0 +1,20 @@
+[
+  {
+    "address": "0xe2d60cfe3cf8b2079c7df0144c5b28c03469775c",
+    "protocol": "changenow",
+    "label": "ChangeNOW Hot Wallet (BSC)",
+    "chain": "bsc",
+    "role": "swap",
+    "source": "bscscan-label-2026-05",
+    "last_verified": "2026-05-07"
+  },
+  {
+    "address": "0x4727250679294802377dd6ca6541b8e459077c95",
+    "protocol": "fixedfloat",
+    "label": "FixedFloat Hot Wallet (multi-chain mirror)",
+    "chain": "bsc",
+    "role": "swap",
+    "source": "bscscan-label-2026-05",
+    "last_verified": "2026-05-07"
+  }
+]

@@ -1,0 +1,164 @@
+[
+  {
+    "address": "0x12D66f87A04A9E220743712cE6d9bB1B5616B8Fc",
+    "protocol": "tornado-cash",
+    "label": "Tornado Cash 0.1 ETH",
+    "chain": "ethereum",
+    "role": "mixer",
+    "source": "tornado-deployments",
+    "last_verified": "2026-05-06"
+  },
+  {
+    "address": "0x47CE0C6eD5B0Ce3d3A51fdb1C52DC66a7c3c2936",
+    "protocol": "tornado-cash",
+    "label": "Tornado Cash 1 ETH",
+    "chain": "ethereum",
+    "role": "mixer",
+    "source": "tornado-deployments",
+    "last_verified": "2026-05-06"
+  },
+  {
+    "address": "0x910Cbd523D972eb0a6f4cAe4618aD62622b39DbF",
+    "protocol": "tornado-cash",
+    "label": "Tornado Cash 10 ETH",
+    "chain": "ethereum",
+    "role": "mixer",
+    "source": "tornado-deployments",
+    "last_verified": "2026-05-06"
+  },
+  {
+    "address": "0xA160cdAB225685dA1d56aa342Ad8841c3b53f291",
+    "protocol": "tornado-cash",
+    "label": "Tornado Cash 100 ETH",
+    "chain": "ethereum",
+    "role": "mixer",
+    "source": "tornado-deployments",
+    "last_verified": "2026-05-06"
+  },
+  {
+    "address": "0xD4B88Df4D29F5CedD6857912842cff3b20C8Cfa3",
+    "protocol": "tornado-cash",
+    "label": "Tornado Cash 100 DAI",
+    "chain": "ethereum",
+    "role": "mixer",
+    "source": "tornado-deployments",
+    "last_verified": "2026-05-06"
+  },
+  {
+    "address": "0xFD8610d20aA15b7B2E3Be39B396a1bC3516c7144",
+    "protocol": "tornado-cash",
+    "label": "Tornado Cash 1000 DAI",
+    "chain": "ethereum",
+    "role": "mixer",
+    "source": "tornado-deployments",
+    "last_verified": "2026-05-06"
+  },
+  {
+    "address": "0x07687e702b410Fa43f4cB4Af7FA097918ffD2730",
+    "protocol": "tornado-cash",
+    "label": "Tornado Cash 10000 DAI",
+    "chain": "ethereum",
+    "role": "mixer",
+    "source": "tornado-deployments",
+    "last_verified": "2026-05-06"
+  },
+  {
+    "address": "0x23773E65ed146A459791799d01336DB287f25334",
+    "protocol": "tornado-cash",
+    "label": "Tornado Cash 100000 DAI",
+    "chain": "ethereum",
+    "role": "mixer",
+    "source": "tornado-deployments",
+    "last_verified": "2026-05-06"
+  },
+  {
+    "address": "0xd96f2B1c14Db8458374d9Aca76E26c3D18364307",
+    "protocol": "tornado-cash",
+    "label": "Tornado Cash 100 USDC",
+    "chain": "ethereum",
+    "role": "mixer",
+    "source": "tornado-deployments",
+    "last_verified": "2026-05-06"
+  },
+  {
+    "address": "0x4736dCf1b7A3d580672CcE6E7c65cd5cc9cFBa9D",
+    "protocol": "tornado-cash",
+    "label": "Tornado Cash 1000 USDC",
+    "chain": "ethereum",
+    "role": "mixer",
+    "source": "tornado-deployments",
+    "last_verified": "2026-05-06"
+  },
+  {
+    "address": "0x169AD27A470D064DEDE56a2D3ff727986b15D52B",
+    "protocol": "tornado-cash",
+    "label": "Tornado Cash 100 USDT",
+    "chain": "ethereum",
+    "role": "mixer",
+    "source": "tornado-deployments",
+    "last_verified": "2026-05-06"
+  },
+  {
+    "address": "0x0836222F2B2B24A3F36f98668Ed8F0B38D1a872f",
+    "protocol": "tornado-cash",
+    "label": "Tornado Cash 1000 USDT",
+    "chain": "ethereum",
+    "role": "mixer",
+    "source": "tornado-deployments",
+    "last_verified": "2026-05-06"
+  },
+  {
+    "address": "0x178169B423a011fff22B9e3F3abeA13414dDD0F1",
+    "protocol": "tornado-cash",
+    "label": "Tornado Cash 0.1 WBTC",
+    "chain": "ethereum",
+    "role": "mixer",
+    "source": "tornado-deployments",
+    "last_verified": "2026-05-06"
+  },
+  {
+    "address": "0x610B717796ad172B316836AC95a2ffad065CeaB4",
+    "protocol": "tornado-cash",
+    "label": "Tornado Cash 1 WBTC",
+    "chain": "ethereum",
+    "role": "mixer",
+    "source": "tornado-deployments",
+    "last_verified": "2026-05-06"
+  },
+  {
+    "address": "0xbB93e510BbCD0B7beb5A853875f9eC60275CF498",
+    "protocol": "tornado-cash",
+    "label": "Tornado Cash 10 WBTC",
+    "chain": "ethereum",
+    "role": "mixer",
+    "source": "tornado-deployments",
+    "last_verified": "2026-05-06"
+  },
+  {
+    "address": "0xd90e2f925DA726b50C4Ed8D0Fb90Ad053324F31b",
+    "protocol": "tornado-cash",
+    "label": "Tornado Cash Router",
+    "chain": "ethereum",
+    "role": "mixer",
+    "source": "tornado-deployments",
+    "last_verified": "2026-05-06"
+  },
+  {
+    "address": "0xFA7093CDD9EE6932B4eb2c9e1cdE7CE00B1FA4b9",
+    "protocol": "railgun",
+    "label": "Railgun RelayAdapt",
+    "chain": "ethereum",
+    "role": "mixer",
+    "source": "railgun-docs",
+    "last_verified": "2026-05-06"
+  },
+  {
+    "address": "0xfb19fb40a17a06bf07f6e0a37c12cFf77a4c7ff5",
+    "protocol": "railgun",
+    "label": "Railgun Smart Wallet v2",
+    "chain": "ethereum",
+    "role": "mixer",
+    "source": "railgun-docs",
+    "last_verified": "2026-05-06"
+  }
+]

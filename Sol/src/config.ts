@@ -6,6 +6,8 @@ export const config = {
   heliusApiKey: process.env.HELIUS_API_KEY!,
   birdeyeApiKey: process.env.BIRDEYE_API_KEY,
   moralisApiKey: process.env.MORALIS_API_KEY,
+  ankrApiKey: process.env.ANKR_API_KEY || "",
+  arkhamApiKey: process.env.ARKHAM_API_KEY || "",
 
   // Rate limiting
   heliusRpsGeneral: 10,

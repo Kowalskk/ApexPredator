@@ -1,0 +1,75 @@
+[
+  {
+    "address": "0x975d9bd9928f398c7e01f6ba236816fa558cd94b",
+    "protocol": "changenow",
+    "label": "ChangeNOW Hot 1",
+    "chain": "ethereum",
+    "role": "swap",
+    "source": "etherscan-label-2026-05",
+    "last_verified": "2026-05-07"
+  },
+  {
+    "address": "0xa96be652a08d9905f15b7fbe2255708709becd09",
+    "protocol": "changenow",
+    "label": "ChangeNOW Hot 2",
+    "chain": "ethereum",
+    "role": "swap",
+    "source": "etherscan-label-2026-05",
+    "last_verified": "2026-05-07"
+  },
+  {
+    "address": "0xa12e1462d0ced572f396f58b6e2d03894cd7c8a4",
+    "protocol": "changenow",
+    "label": "ChangeNOW 10",
+    "chain": "ethereum",
+    "role": "swap",
+    "source": "etherscan-label-2026-05",
+    "last_verified": "2026-05-07"
+  },
+  {
+    "address": "0x4e5b2e1dc63f6b91cb6cd759936495434c7e972f",
+    "protocol": "fixedfloat",
+    "label": "FixedFloat 1 (most active hot)",
+    "chain": "ethereum",
+    "role": "swap",
+    "source": "etherscan-label-2026-05",
+    "last_verified": "2026-05-07"
+  },
+  {
+    "address": "0x4727250679294802377dd6ca6541b8e459077c95",
+    "protocol": "fixedfloat",
+    "label": "FixedFloat Hot Wallet (multi-chain)",
+    "chain": "ethereum",
+    "role": "swap",
+    "source": "etherscan-label-2026-05",
+    "last_verified": "2026-05-07"
+  },
+  {
+    "address": "0xf1da173228fcf015f43f3ea15abbb51f0d8f1123",
+    "protocol": "exch",
+    "label": "eXch.cx Hot Wallet (suspicious - taken down)",
+    "chain": "ethereum",
+    "role": "swap",
+    "source": "etherscan-label-2026-05",
+    "last_verified": "2026-05-07"
+  },
+  {
+    "address": "0xcdd37ada79f589c15bd4f8fd2083dc88e34a2af2",
+    "protocol": "sideshift",
+    "label": "SideShift Hot Wallet",
+    "chain": "ethereum",
+    "role": "swap",
+    "source": "etherscan-label-2026-05",
+    "last_verified": "2026-05-07"
+  },
+  {
+    "address": "0x7bacd3e83522f484bc5128ea93bf7290f1f1b9e5",
+    "protocol": "simpleswap",
+    "label": "SimpleSwap 7",
+    "chain": "ethereum",
+    "role": "swap",
+    "source": "etherscan-label-2026-05",
+    "last_verified": "2026-05-07"
+  },
+  }
+]

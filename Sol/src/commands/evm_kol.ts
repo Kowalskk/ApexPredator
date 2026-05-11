@@ -4,6 +4,48 @@ import { getTokenInfo, detectEvmChain } from "../services/dexscreener";
 import { filterEoaTraders } from "../services/evm_filters";
 import { shortenEvmAddress, escHtml } from "../utils/evm";
 import { splitMessage } from "../utils/format";
+import {
+  analyzeTokenForWallets,
+  getWalletFunding,
+  getNativeBalance,
+  TokenBuyStats,
+  WalletFunding,
+} from "../services/wallet_analysis";
+
+const NATIVE_SYMBOL: Record<string, string> = {
+  eth: "ETH", bsc: "BNB", base: "ETH", arbitrum: "ETH",
+};
+
+function fmtNum(n: number): string {
+  if (!isFinite(n) || n === 0) return "0";
+  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`;
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  if (n >= 1) return n.toFixed(2);
+  if (n >= 0.001) return n.toFixed(4);
+  return n.toExponential(2);
+}
+
+function fmtUsd(n: number): string {
+  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`;
+  if (n >= 1_000) return `$${(n / 1_000).toFixed(1)}K`;
+  return `$${n.toFixed(2)}`;
+}
+
+function statusEmoji(s: TokenBuyStats["status"]): string {
+  switch (s) {
+    case "holding":    return "💎";
+    case "partial":    return "🔸";
+    case "sold_all":   return "❌";
+    case "never_bought": return "·";
+  }
+}
+
+function fundingTag(f: WalletFunding): string {
+  if (f.source === "UNKNOWN") return "<i>anónima</i>";
+  const label = f.label || f.source;
+  return `<b>${escHtml(label)}</b>`;
+}
 
 const CHAIN_EXPLORERS: Record<string, string> = {
   eth: "https://etherscan.io/address/",
@@ -164,29 +206,74 @@ export async function handleEvmKol(ctx: Context, rawArgs: string[]): Promise<voi
       return;
     }
 
-    // Build result entries sorted by highest current holding % in first token
-    interface Entry { address: string; holdings: { symbol: string; pct: number; usd: number; isHolder: boolean }[] }
-    const results: Entry[] = [];
+    // ─── Deep analysis: per-token buy stats via Ankr logs + funding + balance ──
+    await ctx.api.editMessageText(
+      ctx.chat!.id, statusMsg.message_id,
+      `🔬 Analizando ${eoaSet.size} wallets vs ${mints.length} tokens (logs Ankr + balances + funding)...`,
+      { parse_mode: "HTML" }
+    );
 
-    for (const addr of eoaSet) {
-      const holdings = mints.map((_, i) => {
+    const walletList = Array.from(eoaSet);
+    // 1) Por token: 1 sola call de logs + cómputo por wallet (enfoque B)
+    const tokenAnalyses = await Promise.all(
+      mints.map((m) =>
+        analyzeTokenForWallets(m, chain, walletList).catch((e) => {
+          console.log(`[/kol] analyze ${m.slice(0, 10)} ERR:`, e?.message || e);
+          return null;
+        })
+      )
+    );
+    // 2) Por wallet: balance native + funding (paralelo en lotes para no abusar)
+    const balances = await Promise.all(walletList.map((w) => getNativeBalance(w, chain).catch(() => 0)));
+    const fundings = await Promise.all(
+      walletList.map((w) =>
+        getWalletFunding(w, chain).catch(() => ({ source: "UNKNOWN" as const, label: null, funderAddress: null }))
+      )
+    );
+
+    interface DeepEntry {
+      address: string;
+      nativeBalance: number;
+      funding: WalletFunding;
+      perToken: Array<{
+        symbol: string;
+        stats: TokenBuyStats | null;
+        holderPct: number;    // % supply ahora mismo (de Moralis holderMaps si está en top 500)
+        holderUsd: number;
+      }>;
+    }
+
+    const results: DeepEntry[] = walletList.map((addr, idx) => {
+      const perToken = mints.map((_, i) => {
+        const ta = tokenAnalyses[i];
+        const stats = ta ? ta.perWallet.get(addr) || null : null;
         const h = holderMaps[i].get(addr);
         return {
           symbol: symbols[i],
-          pct: h?.pct || 0,
-          usd: h?.usd || 0,
-          isHolder: !!h,
+          stats,
+          holderPct: h?.pct || 0,
+          holderUsd: h?.usd || 0,
         };
       });
-      results.push({ address: addr, holdings });
-    }
-
-    results.sort((a, b) => {
-      const avgA = a.holdings.reduce((s, h) => s + h.pct, 0) / a.holdings.length;
-      const avgB = b.holdings.reduce((s, h) => s + h.pct, 0) / b.holdings.length;
-      return avgB - avgA;
+      return {
+        address: addr,
+        nativeBalance: balances[idx],
+        funding: fundings[idx],
+        perToken,
+      };
     });
 
+    // Sort: prioriza wallets que aún holdean en >= 1 token, luego por pct de supply comprado
+    results.sort((a, b) => {
+      const aHolds = a.perToken.filter((p) => p.stats && p.stats.status === "holding").length;
+      const bHolds = b.perToken.filter((p) => p.stats && p.stats.status === "holding").length;
+      if (aHolds !== bHolds) return bHolds - aHolds;
+      const aPct = a.perToken.reduce((s, p) => s + (p.stats?.pctSupplyBought || 0), 0);
+      const bPct = b.perToken.reduce((s, p) => s + (p.stats?.pctSupplyBought || 0), 0);
+      return bPct - aPct;
+    });
+
+    const nativeSym = NATIVE_SYMBOL[chain] || "ETH";
     const lines: string[] = [];
     lines.push(`🎯 <b>KOL Finder — ${symbols.map(escHtml).join(" + ")} [${chain.toUpperCase()}]</b>`);
     lines.push(`Found: <b>${results.length}</b> EOA wallets (filtered ${filtered} routers/contracts)`);
@@ -196,16 +283,30 @@ export async function handleEvmKol(ctx: Context, rawArgs: string[]): Promise<voi
     for (let i = 0; i < showMax; i++) {
       const w = results[i];
       const short = shortenEvmAddress(w.address, 4);
-      lines.push(`${i + 1}. <a href="${explorer}${w.address}">${escHtml(short)}</a>`);
+      lines.push(`<b>${i + 1}.</b> <a href="${explorer}${w.address}">${escHtml(short)}</a> · 💰 ${fmtNum(w.nativeBalance)} ${nativeSym} · 🔗 ${fundingTag(w.funding)}`);
       lines.push(`<code>${escHtml(w.address)}</code>`);
 
-      for (let j = 0; j < w.holdings.length; j++) {
-        const h = w.holdings[j];
-        const branch = j === w.holdings.length - 1 ? "└" : "├";
-        const status = h.isHolder
-          ? `<b>${h.pct.toFixed(3)}%</b> · <code>${h.usd >= 1000 ? `$${(h.usd / 1000).toFixed(1)}K` : `$${h.usd.toFixed(0)}`}</code>`
-          : `<i>sold / transferred</i>`;
-        lines.push(`  ${branch} ${escHtml(h.symbol)}: ${status}`);
+      for (let j = 0; j < w.perToken.length; j++) {
+        const p = w.perToken[j];
+        const branch = j === w.perToken.length - 1 ? "└" : "├";
+        const s = p.stats;
+        if (!s || s.status === "never_bought") {
+          lines.push(`  ${branch} ${escHtml(p.symbol)}: <i>no compras detectadas</i>`);
+          continue;
+        }
+        const emoji = statusEmoji(s.status);
+        const mc = s.marketCapAtEntry > 0 ? `MC@entry: ${fmtNum(s.marketCapAtEntry)} ${nativeSym}` : "MC@entry: n/d";
+        const supplyPct = s.pctSupplyBought > 0 ? `${s.pctSupplyBought.toFixed(3)}%` : "<0.001%";
+        lines.push(`  ${branch} ${emoji} <b>${escHtml(p.symbol)}</b>`);
+        lines.push(`     ├ Compró: <b>${fmtNum(s.totalBought)}</b> tokens (${supplyPct} supply)`);
+        lines.push(`     ├ Gastado aprox: <b>${fmtNum(s.nativeSpent)} ${nativeSym}</b> · ${mc}`);
+        const ahora = p.holderPct > 0
+          ? `${p.holderPct.toFixed(3)}% · ${fmtUsd(p.holderUsd)}`
+          : `${fmtNum(s.currentBalance)} tokens`;
+        const estado = s.status === "holding" ? "holdea todo" :
+                       s.status === "partial" ? `vendió parte (queda ${fmtNum(s.currentBalance)})` :
+                       "vendió todo";
+        lines.push(`     └ Ahora: ${ahora} · <i>${estado}</i>`);
       }
       lines.push("");
     }
