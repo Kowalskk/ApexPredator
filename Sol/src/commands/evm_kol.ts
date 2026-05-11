@@ -53,27 +53,59 @@ function parseFromDate(args: string[]): { mints: string[]; fromDate?: Date } {
 }
 
 export async function handleEvmKol(ctx: Context, rawArgs: string[]): Promise<void> {
-  const { mints, fromDate } = parseFromDate(rawArgs);
+  const { mints, fromDate: userFromDate } = parseFromDate(rawArgs);
   const statusMsg = await ctx.reply(`🔍 Detecting chain and fetching buyers for ${mints.length} tokens...`);
 
   try {
     const chain = await detectEvmChain(mints[0]);
     const explorer = CHAIN_EXPLORERS[chain] || "https://etherscan.io/address/";
 
-    const rangeLabel = fromDate
-      ? `desde ${fromDate.toISOString().slice(0, 7)}`
-      : "últimas 10K transfers";
+    // Fetch token info first to know token age
+    const tokenInfos = await Promise.all(mints.map((m) => getTokenInfo(m).catch(() => null)));
+
+    // Auto-decide range based on the OLDEST token in the set (so we cover all):
+    //   - If user passed `desde:` explicitly, respect it.
+    //   - Else if oldest token <60d old → fetch full history (no fromDate, large cap).
+    //   - Else → fetch last 90 days.
+    const DAY_MS = 86_400_000;
+    const now = Date.now();
+    const oldestCreated = tokenInfos
+      .map((t) => t?.pairCreatedAt || 0)
+      .filter((ts) => ts > 0)
+      .reduce((min, ts) => (ts < min ? ts : min), Infinity);
+    const ageDays = oldestCreated === Infinity ? 0 : (now - oldestCreated) / DAY_MS;
+
+    let fromDate: Date | undefined;
+    let rangeLabel: string;
+    let maxPages: number;
+    let autoNote = "";
+
+    if (userFromDate) {
+      fromDate = userFromDate;
+      maxPages = 1000;
+      rangeLabel = `desde ${fromDate.toISOString().slice(0, 10)}`;
+    } else if (ageDays > 0 && ageDays <= 60) {
+      fromDate = undefined;
+      maxPages = 1000;
+      rangeLabel = `histórico completo (~${ageDays.toFixed(0)}d)`;
+    } else {
+      fromDate = new Date(now - 90 * DAY_MS);
+      maxPages = 500;
+      const oldestDate = new Date(oldestCreated).toISOString().slice(0, 10);
+      rangeLabel = "últimos 90 días";
+      autoNote = `\n<i>⚠️ Token más antiguo: ${oldestDate} (${ageDays.toFixed(0)}d). Para ver todo el histórico usa <code>desde:YYYY-MM-DD</code>.</i>`;
+    }
 
     await ctx.api.editMessageText(
       ctx.chat!.id, statusMsg.message_id,
-      `🔍 Fetching on ${chain.toUpperCase()}: top 500 holders + transfers ${rangeLabel} per token...`
+      `🔍 Fetching on ${chain.toUpperCase()}: top 500 holders + transfers ${rangeLabel} per token...`,
+      { parse_mode: "HTML" }
     );
 
-    // Fetch buyers + current holders + token info in parallel
-    const [buyerSets, holderSets, tokenInfos] = await Promise.all([
-      Promise.all(mints.map((m) => getEvmTokenBuyers(m, chain, 100, fromDate).catch(() => new Set<string>()))),
+    // Fetch buyers + current holders in parallel
+    const [buyerSets, holderSets] = await Promise.all([
+      Promise.all(mints.map((m) => getEvmTokenBuyers(m, chain, maxPages, fromDate).catch(() => new Set<string>()))),
       Promise.all(mints.map((m) => getEvmTopHolders(m, chain, 500).catch(() => []))),
-      Promise.all(mints.map((m) => getTokenInfo(m).catch(() => null))),
     ]);
 
     const symbols = mints.map((_, i) => tokenInfos[i]?.symbol || `Token${i + 1}`);
@@ -148,7 +180,8 @@ export async function handleEvmKol(ctx: Context, rawArgs: string[]): Promise<voi
 
     const lines: string[] = [];
     lines.push(`🎯 <b>KOL Finder — ${symbols.map(escHtml).join(" + ")} [${chain.toUpperCase()}]</b>`);
-    lines.push(`Found: <b>${results.length}</b> EOA wallets (filtered ${filtered} routers/contracts)\n`);
+    lines.push(`Found: <b>${results.length}</b> EOA wallets (filtered ${filtered} routers/contracts)`);
+    lines.push(`<i>Rango: ${rangeLabel}</i>${autoNote}\n`);
 
     const showMax = Math.min(results.length, 50);
     for (let i = 0; i < showMax; i++) {
