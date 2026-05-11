@@ -106,32 +106,40 @@ export async function getTransferLogs(
   return allLogs;
 }
 
-// Buyers de un token = unique `to` addresses en los Transfer logs desde el deploy.
-// Lookup directo via Ankr — sin depender de Moralis.
+// Traduce un timestamp UNIX a un bloque aproximado para una chain dada.
+const SECS_PER_BLOCK: Record<string, number> = { eth: 12, bsc: 3, base: 2, arbitrum: 0.25 };
+export function timestampToBlock(timestamp: number, head: number, chain: string): number {
+  const spb = SECS_PER_BLOCK[chain] || 12;
+  const secsAgo = Math.floor((Date.now() / 1000) - timestamp);
+  const blocksAgo = Math.floor(secsAgo / spb);
+  return Math.max(0, head - blocksAgo);
+}
+
+// Buyers de un token = unique `to` addresses en los Transfer logs.
+// Acepta `fromBlock` explícito (recomendado, ej. pairCreatedAt convertido) y/o `fromDate`.
 export async function getTokenBuyersFromLogs(
   tokenAddress: string,
   chain: string,
-  fromDate?: Date
+  fromDate?: Date,
+  explicitFromBlock?: number
 ): Promise<Set<string>> {
-  const dateKey = fromDate ? fromDate.toISOString().slice(0, 10) : "all";
+  const dateKey = explicitFromBlock != null
+    ? `b${explicitFromBlock}`
+    : fromDate ? fromDate.toISOString().slice(0, 10) : "all";
   const cacheKey = `ankr:buyers:${chain}:${tokenAddress.toLowerCase()}:${dateKey}`;
   const cached = cacheGet<string[]>(cacheKey);
   if (cached) return new Set(cached);
 
-  const [head, deployBlock] = await Promise.all([
-    getBlockNumber(chain),
-    getContractDeployBlock(tokenAddress, chain),
-  ]);
-
-  // Si fromDate viene, traducimos aproximadamente a bloque (~12s/bloque en ETH, ~3s en BSC)
-  let fromBlock = deployBlock;
-  if (fromDate) {
-    const SECS_PER_BLOCK: Record<string, number> = { eth: 12, bsc: 3, base: 2, arbitrum: 0.25 };
-    const spb = SECS_PER_BLOCK[chain] || 12;
-    const secsAgo = Math.floor((Date.now() - fromDate.getTime()) / 1000);
-    const blocksAgo = Math.floor(secsAgo / spb);
-    const dateBlock = Math.max(0, head - blocksAgo);
-    fromBlock = Math.max(deployBlock, dateBlock);
+  const head = await getBlockNumber(chain);
+  let fromBlock: number;
+  if (explicitFromBlock != null) {
+    fromBlock = explicitFromBlock;
+  } else if (fromDate) {
+    fromBlock = timestampToBlock(Math.floor(fromDate.getTime() / 1000), head, chain);
+  } else {
+    // Sin pista — caemos al binary search (caro). Cap a 7 días para no quemarse.
+    const SEVEN_DAYS = 7 * 24 * 3600;
+    fromBlock = timestampToBlock(Math.floor(Date.now() / 1000) - SEVEN_DAYS, head, chain);
   }
 
   const logs = await getTransferLogs(tokenAddress, chain, fromBlock, head);

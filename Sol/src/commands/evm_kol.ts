@@ -141,12 +141,21 @@ export async function handleEvmKol(ctx: Context, rawArgs: string[]): Promise<voi
       { parse_mode: "HTML" }
     );
 
-    // Fetch buyers + current holders SECUENCIAL por token (evita 429/500 de Moralis con bursts)
+    // Fetch buyers + current holders SECUENCIAL por token
+    // - buyers: via Ankr eth_getLogs, usando pairCreatedAt como fromBlock cuando esté disponible
+    const { getBlockNumber, timestampToBlock } = await import("../services/ankr");
+    const head = await getBlockNumber(chain).catch(() => 0);
     const buyerSets: Set<string>[] = [];
     const holderSets: any[][] = [];
-    for (const m of mints) {
+    for (let i = 0; i < mints.length; i++) {
+      const m = mints[i];
+      const ti = tokenInfos[i];
+      const pairCreated = ti?.pairCreatedAt ? Math.floor(ti.pairCreatedAt / 1000) : 0;
+      const explicitFromBlock = pairCreated > 0 && head > 0
+        ? Math.max(0, timestampToBlock(pairCreated, head, chain) - 1000) // 1000 bloques antes por margen
+        : undefined;
       const [bs, hs] = await Promise.all([
-        getTokenBuyersFromLogs(m, chain, fromDate).catch((e: any) => {
+        getTokenBuyersFromLogs(m, chain, fromDate, explicitFromBlock).catch((e: any) => {
           console.log(`[/kol] buyers ${m.slice(0, 10)} ERR:`, e?.message || e);
           return new Set<string>();
         }),
