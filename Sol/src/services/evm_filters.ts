@@ -86,15 +86,39 @@ export function looksLikeVanityContract(address: string): boolean {
   return false;
 }
 
-// ─── On-chain EOA check via eth_getCode ───────────────────────────────────────
+// ─── On-chain EOA check via eth_getCode (Ankr primary, public fallback) ──────
 // EOAs return "0x" — contracts return their bytecode.
 
-const RPC_URLS: Record<string, string> = {
+const ANKR_RPCS: Record<string, string> = {
+  eth:      "https://rpc.ankr.com/eth",
+  bsc:      "https://rpc.ankr.com/bsc",
+  base:     "https://rpc.ankr.com/base",
+  arbitrum: "https://rpc.ankr.com/arbitrum",
+};
+
+const PUBLIC_RPCS: Record<string, string> = {
   eth:      "https://eth.llamarpc.com",
   bsc:      "https://bsc-dataseed.binance.org",
   base:     "https://mainnet.base.org",
   arbitrum: "https://arb1.arbitrum.io/rpc",
 };
+
+async function tryGetCode(rpc: string, address: string): Promise<string | null> {
+  try {
+    const res = await fetch(rpc, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_getCode", params: [address, "latest"] }),
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (!res.ok) return null;
+    const j = (await res.json()) as any;
+    if (j.error) return null;
+    return typeof j.result === "string" ? j.result : null;
+  } catch {
+    return null;
+  }
+}
 
 export async function isContract(address: string, chain: string): Promise<boolean> {
   const cacheKey = `iscontract:${chain}:${address.toLowerCase()}`;
@@ -108,26 +132,28 @@ export async function isContract(address: string, chain: string): Promise<boolea
     return true;
   }
 
-  const rpc = RPC_URLS[chain] || RPC_URLS.eth;
-  try {
-    const res = await fetch(rpc, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "eth_getCode",
-        params: [address, "latest"],
-      }),
-    });
-    const json = (await res.json()) as any;
-    const code: string = json.result || "0x";
-    const contract = code !== "0x" && code !== "0x0";
-    cacheSet(cacheKey, contract, 60 * 60 * 1000); // 1h TTL — bytecode rarely changes
-    return contract;
-  } catch {
-    return false;
+  // 1) Ankr (con key si está configurada) → 2) Ankr público → 3) public RPC fallback
+  const ankrKey = config.ankrApiKey;
+  const candidates = [
+    ankrKey ? `${ANKR_RPCS[chain] || ANKR_RPCS.eth}/${ankrKey}` : null,
+    ANKR_RPCS[chain] || ANKR_RPCS.eth,
+    PUBLIC_RPCS[chain] || PUBLIC_RPCS.eth,
+  ].filter(Boolean) as string[];
+
+  let code: string | null = null;
+  for (const rpc of candidates) {
+    code = await tryGetCode(rpc, address);
+    if (code !== null) break;
   }
+
+  if (code === null) {
+    // No conseguimos respuesta — fail SAFE: tratamos como contrato para no colar bots
+    cacheSet(cacheKey, true, 60 * 1000);
+    return true;
+  }
+  const contract = code !== "0x" && code !== "0x0";
+  cacheSet(cacheKey, contract, 60 * 60 * 1000);
+  return contract;
 }
 
 // ─── Bot detection via Moralis wallet stats ──────────────────────────────────
@@ -179,18 +205,28 @@ export function looksLikeBot(activity: WalletActivity): boolean {
   );
 }
 
+// Tipos Arkham que NO son humanos individuales → descartar
+// (cuidado: NO descartamos 'KOL', 'individual' — esos son justo lo que queremos)
+const NON_HUMAN_ARKHAM_TYPES = new Set([
+  "CEX", "BRIDGE", "MIXER", "SWAP_SERVICE", "DEX", "DEX_AGG",
+  "MEV", "MARKET_MAKER", "CUSTODIAN", "INFRA", "LENDING", "FUND",
+]);
+
 /**
  * Filter a list of candidate addresses, returning only those that look like
- * real EOA traders. Uses 4 layers in order of cost:
+ * real EOA traders. Layers en orden de coste:
  * 1. Known contracts blacklist (instant)
  * 2. Vanity heuristics (instant)
- * 3. eth_getCode (cached, RPC call) — drops contracts
- * 4. Tx count (Moralis stats) — drops MEV/arb bots (>50K txs)
+ * 3. eth_getCode (Ankr/RPC, fail-safe) — drops contracts
+ * 4. Arkham label — drops CEX/Bridge/MEV/DEX/MarketMaker/etc (mantiene KOL/individual)
+ * 5. Tx count (Moralis stats) — drops MEV/arb bots con stats extremas
  */
 export async function filterEoaTraders(
   addresses: string[],
   chain: string
 ): Promise<{ kept: string[]; filtered: number }> {
+  const { resolveArkhamLabel } = await import("./arkham");
+
   // Pass 1+2: cheap filters
   const candidates = addresses.filter((a) => {
     const lower = a.toLowerCase();
@@ -199,15 +235,25 @@ export async function filterEoaTraders(
     return true;
   });
 
-  // Pass 3: getCode in parallel
+  // Pass 3: getCode
   const codeResults = await Promise.all(
     candidates.map((a) => isContract(a, chain).then((isC) => ({ addr: a, isC })))
   );
   const eoas = codeResults.filter((r) => !r.isC).map((r) => r.addr);
 
-  // Pass 4: activity check — drop bots / relays / aggregators
+  // Pass 4: Arkham — descarta tipos no-humanos (preserva KOLs e individuales)
+  const arkhamResults = await Promise.all(
+    eoas.map(async (a) => {
+      const lbl = await resolveArkhamLabel(a, chain).catch(() => null);
+      const drop = !!(lbl?.funderType && NON_HUMAN_ARKHAM_TYPES.has(lbl.funderType));
+      return { addr: a, drop };
+    })
+  );
+  const afterArkham = arkhamResults.filter((r) => !r.drop).map((r) => r.addr);
+
+  // Pass 5: activity check — drop bots / relays con stats extremas
   const activities = await Promise.all(
-    eoas.map((a) => getWalletActivity(a, chain).then((act) => ({ addr: a, act })))
+    afterArkham.map((a) => getWalletActivity(a, chain).then((act) => ({ addr: a, act })))
   );
   const kept = activities.filter((r) => !looksLikeBot(r.act)).map((r) => r.addr);
 
