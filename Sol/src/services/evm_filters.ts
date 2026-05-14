@@ -86,68 +86,25 @@ export function looksLikeVanityContract(address: string): boolean {
   return false;
 }
 
-// ─── On-chain EOA check via eth_getCode (Ankr primary, public fallback) ──────
-// EOAs return "0x" — contracts return their bytecode.
-
-const ANKR_RPCS: Record<string, string> = {
-  eth:      "https://rpc.ankr.com/eth",
-  bsc:      "https://rpc.ankr.com/bsc",
-  base:     "https://rpc.ankr.com/base",
-  arbitrum: "https://rpc.ankr.com/arbitrum",
-};
-
-const PUBLIC_RPCS: Record<string, string> = {
-  eth:      "https://eth.llamarpc.com",
-  bsc:      "https://bsc-dataseed.binance.org",
-  base:     "https://mainnet.base.org",
-  arbitrum: "https://arb1.arbitrum.io/rpc",
-};
-
-async function tryGetCode(rpc: string, address: string): Promise<string | null> {
-  try {
-    const res = await fetch(rpc, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_getCode", params: [address, "latest"] }),
-      signal: AbortSignal.timeout(8_000),
-    });
-    if (!res.ok) return null;
-    const j = (await res.json()) as any;
-    if (j.error) return null;
-    return typeof j.result === "string" ? j.result : null;
-  } catch {
-    return null;
-  }
-}
+// ─── On-chain EOA check via eth_getCode ──────────────────────────────────────
+// Uses the shared RPC cascade from ankr.ts (Alchemy → dRPC → Chainstack → …)
 
 export async function isContract(address: string, chain: string): Promise<boolean> {
   const cacheKey = `iscontract:${chain}:${address.toLowerCase()}`;
   const cached = cacheGet<boolean>(cacheKey);
   if (cached !== undefined && cached !== null) return cached;
 
-  // Quick wins: known contracts and obvious null
   const lower = address.toLowerCase();
   if (KNOWN_CONTRACTS[lower]) {
     cacheSet(cacheKey, true, config.cacheTtl);
     return true;
   }
 
-  // 1) Ankr (con key si está configurada) → 2) Ankr público → 3) public RPC fallback
-  const ankrKey = config.ankrApiKey;
-  const candidates = [
-    ankrKey ? `${ANKR_RPCS[chain] || ANKR_RPCS.eth}/${ankrKey}` : null,
-    ANKR_RPCS[chain] || ANKR_RPCS.eth,
-    PUBLIC_RPCS[chain] || PUBLIC_RPCS.eth,
-  ].filter(Boolean) as string[];
-
-  let code: string | null = null;
-  for (const rpc of candidates) {
-    code = await tryGetCode(rpc, address);
-    if (code !== null) break;
-  }
+  const { getCode } = await import("./ankr");
+  const code = await getCode(address, chain);
 
   if (code === null) {
-    // No conseguimos respuesta — fail SAFE: tratamos como contrato para no colar bots
+    // All RPCs failed — fail safe: treat as contract to avoid letting bots through
     cacheSet(cacheKey, true, 60 * 1000);
     return true;
   }
