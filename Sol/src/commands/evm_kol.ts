@@ -98,19 +98,16 @@ function parseFromDate(args: string[]): { mints: string[]; fromDate?: Date } {
 
 export async function handleEvmKol(ctx: Context, rawArgs: string[]): Promise<void> {
   const { mints, fromDate: userFromDate } = parseFromDate(rawArgs);
-  const statusMsg = await ctx.reply(`🔍 Detecting chain and fetching buyers for ${mints.length} tokens...`);
+  const statusMsg = await ctx.reply(`🔍 Detecting chains for ${mints.length} tokens...`);
 
   try {
-    const chain = await detectEvmChain(mints[0]);
-    const explorer = CHAIN_EXPLORERS[chain] || "https://etherscan.io/address/";
-
-    // Fetch token info first to know token age
+    // Detect chain PER TOKEN in parallel — allows mixing ETH + BSC
     const tokenInfos = await Promise.all(mints.map((m) => getTokenInfo(m).catch(() => null)));
+    const chains = await Promise.all(mints.map((m) => detectEvmChain(m).catch(() => "eth" as string)));
 
-    // Auto-decide range based on the OLDEST token in the set (so we cover all):
-    //   - If user passed `desde:` explicitly, respect it.
-    //   - Else if oldest token <60d old → fetch full history (no fromDate, large cap).
-    //   - Else → fetch last 90 days.
+    const chainLabel = [...new Set(chains)].map(c => c.toUpperCase()).join("+");
+
+    // Auto-decide time range based on oldest token
     const DAY_MS = 86_400_000;
     const now = Date.now();
     const oldestCreated = tokenInfos
@@ -138,29 +135,36 @@ export async function handleEvmKol(ctx: Context, rawArgs: string[]): Promise<voi
 
     await ctx.api.editMessageText(
       ctx.chat!.id, statusMsg.message_id,
-      `🔍 Fetching on ${chain.toUpperCase()}: top 500 holders + transfers ${rangeLabel} per token...`,
+      `🔍 Fetching on ${chainLabel}: top holders + transfers ${rangeLabel} per token...`,
       { parse_mode: "HTML" }
     );
 
-    // Fetch buyers + current holders SECUENCIAL por token
-    // - buyers: via Ankr eth_getLogs, usando pairCreatedAt como fromBlock cuando esté disponible
+    // Fetch buyers + holders PER TOKEN using each token's own chain
     const { getBlockNumber, timestampToBlock } = await import("../services/ankr");
-    const head = await getBlockNumber(chain).catch(() => 0);
+
+    // Pre-fetch head block per chain (cache hits for same chain)
+    const headByChain: Record<string, number> = {};
+    for (const c of [...new Set(chains)]) {
+      headByChain[c] = await getBlockNumber(c).catch(() => 0);
+    }
+
     const buyerSets: Set<string>[] = [];
     const holderSets: any[][] = [];
     for (let i = 0; i < mints.length; i++) {
       const m = mints[i];
       const ti = tokenInfos[i];
+      const tokenChain = chains[i];
+      const head = headByChain[tokenChain] || 0;
       const pairCreated = ti?.pairCreatedAt ? Math.floor(ti.pairCreatedAt / 1000) : 0;
       const explicitFromBlock = pairCreated > 0 && head > 0
-        ? Math.max(0, timestampToBlock(pairCreated, head, chain) - 1000) // 1000 bloques antes por margen
+        ? Math.max(0, timestampToBlock(pairCreated, head, tokenChain) - 1000)
         : undefined;
       const [bs, hs] = await Promise.all([
-        getTokenBuyersFromLogs(m, chain, fromDate, explicitFromBlock).catch((e: any) => {
+        getTokenBuyersFromLogs(m, tokenChain, fromDate, explicitFromBlock).catch((e: any) => {
           console.log(`[/kol] buyers ${m.slice(0, 10)} ERR:`, e?.message || e);
           return new Set<string>();
         }),
-        getEvmTopHolders(m, chain, 100).catch((e) => {
+        getEvmTopHolders(m, tokenChain, 100).catch((e) => {
           console.log(`[/kol] holders ${m.slice(0, 10)} ERR:`, e?.message || e);
           return [];
         }),
@@ -168,7 +172,7 @@ export async function handleEvmKol(ctx: Context, rawArgs: string[]): Promise<voi
       buyerSets.push(bs);
       holderSets.push(hs);
     }
-    console.log(`[/kol] raw: buyers=${buyerSets.map(s=>s.size).join(",")} holders=${holderSets.map(h=>h.length).join(",")}`);
+    console.log(`[/kol] chains=${chains.join(",")} buyers=${buyerSets.map(s=>s.size).join(",")} holders=${holderSets.map(h=>h.length).join(",")}`);
 
     const symbols = mints.map((_, i) => tokenInfos[i]?.symbol || `Token${i + 1}`);
 
@@ -199,51 +203,65 @@ export async function handleEvmKol(ctx: Context, rawArgs: string[]): Promise<voi
     const intersection = new Set<string>(
       [...first].filter((addr) => rest.every((s) => s.has(addr)))
     );
-    console.log(`[/kol] chain=${chain} sizes=${combinedSets.map(s=>s.size).join(",")} intersection=${intersection.size}`);
+    console.log(`[/kol] chains=${chains.join(",")} sizes=${combinedSets.map(s=>s.size).join(",")} intersection=${intersection.size}`);
+
+    // Use most common chain for EOA filter + wallet-level balance/funding
+    const primaryChain = chains.reduce((acc, c) => {
+      acc[c] = (acc[c] || 0) + 1; return acc;
+    }, {} as Record<string, number>);
+    const mainChain = Object.entries(primaryChain).sort((a, b) => b[1] - a[1])[0][0];
+    const explorer = CHAIN_EXPLORERS[mainChain] || "https://etherscan.io/address/";
 
     // Filter out routers / aggregators / contracts — keep only EOA traders
     await ctx.api.editMessageText(
       ctx.chat!.id, statusMsg.message_id,
       `🔍 Filtering routers and contracts (${intersection.size} candidates)...`
     );
-    const { kept, filtered } = await filterEoaTraders(Array.from(intersection), chain);
+    const { kept, filtered } = await filterEoaTraders(Array.from(intersection), mainChain);
     const eoaSet = new Set(kept);
     console.log(`[/kol] after filter: kept=${kept.length} filtered=${filtered}`);
 
     if (eoaSet.size === 0) {
       await ctx.api.editMessageText(
         ctx.chat!.id, statusMsg.message_id,
-        `🎯 <b>KOL Finder — ${symbols.map(escHtml).join(" + ")}</b>\n\nNo wallets found that bought all ${mints.length} tokens.\n\n<i>Searched last ~500 transfers per token on ${chain.toUpperCase()}.</i>`,
+        `🎯 <b>Overlap Wallets — ${symbols.map(escHtml).join(" + ")}</b>\n\nNo wallets found that bought all ${mints.length} tokens.\n\n<i>Rango: ${rangeLabel} · Chains: ${chainLabel}</i>`,
         { parse_mode: "HTML" }
       );
       return;
     }
 
-    // ─── Deep analysis: per-token buy stats via Ankr logs + funding + balance ──
+    // ─── Deep analysis: per-token buy stats + funding + balance ──
     await ctx.api.editMessageText(
       ctx.chat!.id, statusMsg.message_id,
-      `🔬 Analizando ${eoaSet.size} wallets vs ${mints.length} tokens (logs Ankr + balances + funding)...`,
+      `🔬 Analizando ${eoaSet.size} wallets vs ${mints.length} tokens...`,
       { parse_mode: "HTML" }
     );
 
     const walletList = Array.from(eoaSet);
-    // 1) Por token: 1 sola call de logs + cómputo por wallet (enfoque B)
+
+    // Per token analysis using each token's own chain
     const tokenAnalyses = await Promise.all(
-      mints.map((m) =>
-        analyzeTokenForWallets(m, chain, walletList).catch((e) => {
+      mints.map((m, i) =>
+        analyzeTokenForWallets(m, chains[i], walletList).catch((e) => {
           console.log(`[/kol] analyze ${m.slice(0, 10)} ERR:`, e?.message || e);
           return null;
         })
       )
     );
-    // 2) Por wallet: balance native + funding (paralelo en lotes para no abusar)
-    const balances = await Promise.all(walletList.map((w) => getNativeBalance(w, chain).catch(() => 0)));
+
+    // Wallet-level: use mainChain for ETH balance + funding (addresses are same cross-chain)
+    const balances = await Promise.all(walletList.map((w) => getNativeBalance(w, mainChain).catch(() => 0)));
     const fundings = await Promise.all(
       walletList.map((w) =>
-        getWalletFunding(w, chain).catch(() => ({ source: "UNKNOWN" as const, label: null, funderAddress: null }))
+        getWalletFunding(w, mainChain).catch(() => ({ source: "UNKNOWN" as const, label: null, funderAddress: null }))
       )
     );
-    const nativePriceUsd = await getNativePriceUsd(chain).catch(() => 0);
+
+    // Native price per chain
+    const nativePriceByChain: Record<string, number> = {};
+    for (const c of [...new Set(chains)]) {
+      nativePriceByChain[c] = await getNativePriceUsd(c).catch(() => 0);
+    }
 
     interface DeepEntry {
       address: string;
@@ -251,8 +269,9 @@ export async function handleEvmKol(ctx: Context, rawArgs: string[]): Promise<voi
       funding: WalletFunding;
       perToken: Array<{
         symbol: string;
+        chain: string;
         stats: TokenBuyStats | null;
-        holderPct: number;    // % supply ahora mismo (de Moralis holderMaps si está en top 500)
+        holderPct: number;
         holderUsd: number;
       }>;
     }
@@ -264,20 +283,15 @@ export async function handleEvmKol(ctx: Context, rawArgs: string[]): Promise<voi
         const h = holderMaps[i].get(addr);
         return {
           symbol: symbols[i],
+          chain: chains[i],
           stats,
           holderPct: h?.pct || 0,
           holderUsd: h?.usd || 0,
         };
       });
-      return {
-        address: addr,
-        nativeBalance: balances[idx],
-        funding: fundings[idx],
-        perToken,
-      };
+      return { address: addr, nativeBalance: balances[idx], funding: fundings[idx], perToken };
     });
 
-    // Sort: prioriza wallets que aún holdean en >= 1 token, luego por pct de supply comprado
     results.sort((a, b) => {
       const aHolds = a.perToken.filter((p) => p.stats && p.stats.status === "holding").length;
       const bHolds = b.perToken.filter((p) => p.stats && p.stats.status === "holding").length;
@@ -287,9 +301,9 @@ export async function handleEvmKol(ctx: Context, rawArgs: string[]): Promise<voi
       return bPct - aPct;
     });
 
-    const nativeSym = NATIVE_SYMBOL[chain] || "ETH";
+    const mainNativeSym = NATIVE_SYMBOL[mainChain] || "ETH";
     const lines: string[] = [];
-    lines.push(`🎯 <b>KOL Finder — ${symbols.map(escHtml).join(" + ")} [${chain.toUpperCase()}]</b>`);
+    lines.push(`🎯 <b>Overlap Wallets — ${symbols.map(escHtml).join(" + ")} [${chainLabel}]</b>`);
     lines.push(`Found: <b>${results.length}</b> EOA wallets (filtered ${filtered} routers/contracts)`);
     lines.push(`<i>Rango: ${rangeLabel}</i>${autoNote}\n`);
 
@@ -297,26 +311,29 @@ export async function handleEvmKol(ctx: Context, rawArgs: string[]): Promise<voi
     for (let i = 0; i < showMax; i++) {
       const w = results[i];
       const short = shortenEvmAddress(w.address, 4);
-      lines.push(`<b>${i + 1}.</b> <a href="${explorer}${w.address}">${escHtml(short)}</a> · 💰 ${fmtNum(w.nativeBalance)} ${nativeSym} · 🔗 ${fundingTag(w.funding)}`);
+      lines.push(`<b>${i + 1}.</b> <a href="${explorer}${w.address}">${escHtml(short)}</a> · 💰 ${fmtNum(w.nativeBalance)} ${mainNativeSym} · 🔗 ${fundingTag(w.funding)}`);
       lines.push(`<code>${escHtml(w.address)}</code>`);
 
       for (let j = 0; j < w.perToken.length; j++) {
         const p = w.perToken[j];
         const branch = j === w.perToken.length - 1 ? "└" : "├";
+        const nativePriceUsd = nativePriceByChain[p.chain] || 0;
+        const nativeSym = NATIVE_SYMBOL[p.chain] || "ETH";
+        const chainTag = p.chain !== mainChain ? ` <i>[${p.chain.toUpperCase()}]</i>` : "";
         const s = p.stats;
         if (!s || s.status === "never_bought") {
-          lines.push(`  ${branch} ${escHtml(p.symbol)}: <i>no compras detectadas</i>`);
+          lines.push(`  ${branch} ${escHtml(p.symbol)}${chainTag}: <i>no compras detectadas</i>`);
           continue;
         }
         const emoji = statusEmoji(s.status);
-        const mcUsd = s.marketCapAtEntry * (nativePriceUsd || 0);
+        const mcUsd = s.marketCapAtEntry * nativePriceUsd;
         const mc = mcUsd > 0
           ? `MC@entry: ${fmtUsd(mcUsd)}`
           : (s.marketCapAtEntry > 0 ? `MC@entry: ${fmtNum(s.marketCapAtEntry)} ${nativeSym}` : "MC@entry: n/d");
         const supplyPct = s.pctSupplyBought > 0 ? `${s.pctSupplyBought.toFixed(3)}%` : "<0.001%";
-        lines.push(`  ${branch} ${emoji} <b>${escHtml(p.symbol)}</b>`);
+        lines.push(`  ${branch} ${emoji} <b>${escHtml(p.symbol)}</b>${chainTag}`);
         lines.push(`     ├ Compró: <b>${fmtNum(s.totalBought)}</b> tokens (${supplyPct} supply)`);
-        const spentUsd = s.nativeSpent * (nativePriceUsd || 0);
+        const spentUsd = s.nativeSpent * nativePriceUsd;
         const spentStr = spentUsd > 0
           ? `${fmtNum(s.nativeSpent)} ${nativeSym} (${fmtUsd(spentUsd)})`
           : `${fmtNum(s.nativeSpent)} ${nativeSym}`;

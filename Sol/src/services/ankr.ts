@@ -109,7 +109,12 @@ async function rpcCascade<T = any>(
 }
 
 class RangeTooLargeError extends Error {
-  constructor(msg: string) { super(msg); this.name = "RangeTooLargeError"; }
+  safeEnd: number | null;
+  constructor(msg: string, safeEnd: number | null = null) {
+    super(msg);
+    this.name = "RangeTooLargeError";
+    this.safeEnd = safeEnd;
+  }
 }
 
 // ─── eth_getBalance ─────────────────────────────────────────────────────────
@@ -151,71 +156,85 @@ export async function getTransferLogs(
   chain: string,
   fromBlock: number,
   toBlock: number,
-  initialChunk = 2000
+  initialChunk = 10_000
 ): Promise<RawLog[]> {
   const key = `rpc:logs:${chain}:${tokenAddress.toLowerCase()}:${fromBlock}-${toBlock}`;
   const cached = cacheGet<RawLog[]>(key);
   if (cached) return cached;
 
-  async function fetchRange(from: number, to: number, chunk: number): Promise<RawLog[]> {
-    const out: RawLog[] = [];
-    let cursor = from;
-    while (cursor <= to) {
-      const end = Math.min(cursor + chunk - 1, to);
+  // Fetches one chunk [from, to] with cascade fallback. Returns logs or throws RangeTooLargeError.
+  async function fetchChunk(from: number, to: number): Promise<RawLog[]> {
+    const rpcs = buildRpcList(chain);
+    for (const url of rpcs) {
       try {
-        const rpcs = buildRpcList(chain);
-        let logs: RawLog[] | null = null;
-        let gotRangeTooLarge = false;
-        for (const url of rpcs) {
-          try {
-            const res = await fetch(url, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_getLogs", params: [{
-                address: tokenAddress,
-                topics: [TRANSFER_TOPIC],
-                fromBlock: "0x" + cursor.toString(16),
-                toBlock: "0x" + end.toString(16),
-              }] }),
-              signal: AbortSignal.timeout(20_000),
-            });
-            if (!res.ok) continue;
-            const j = (await res.json()) as any;
-            if (j.error) {
-              const msg = (j.error.message || "").toLowerCase();
-              if (chunk > 100 && (msg.includes("too large") || msg.includes("response size") || msg.includes("limit exceeded") || msg.includes("eth_getlogs"))) {
-                gotRangeTooLarge = true;
-                break;
-              }
-              console.log(`[rpc:${chain} getLogs] ${cursor}-${end} err: ${j.error.message}`);
-              continue;
-            }
-            if (Array.isArray(j.result)) {
-              logs = j.result;
-              break;
-            }
-          } catch (e: any) {
-            // timeout / network error — try next RPC
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_getLogs", params: [{
+            address: tokenAddress,
+            topics: [TRANSFER_TOPIC],
+            fromBlock: "0x" + from.toString(16),
+            toBlock: "0x" + to.toString(16),
+          }] }),
+          signal: AbortSignal.timeout(20_000),
+        });
+        if (!res.ok) continue;
+        const j = (await res.json()) as any;
+        if (j.error) {
+          const msg = (j.error.message || "").toLowerCase();
+          if (msg.includes("too large") || msg.includes("response size") || msg.includes("limit exceeded") || msg.includes("max results") || msg.includes("eth_getlogs")) {
+            // Alchemy provides the safe end block: "retry with the range X-Y"
+            const retryMatch = j.error.message?.match(/retry with the range \d+-(\d+)/);
+            const safeEnd = retryMatch ? parseInt(retryMatch[1]) : null;
+            throw new RangeTooLargeError(j.error.message, safeEnd);
           }
-        }
-        if (gotRangeTooLarge) {
-          const half = Math.floor(chunk / 2);
-          const sub = await fetchRange(cursor, end, half);
-          out.push(...sub);
-          cursor = end + 1;
+          console.log(`[rpc:${chain} getLogs] ${from}-${to} err: ${j.error.message}`);
           continue;
         }
-        if (logs) out.push(...logs);
+        if (Array.isArray(j.result)) return j.result as RawLog[];
       } catch (e: any) {
-        console.log(`[rpc:${chain} getLogs] ${cursor}-${end} outer err: ${e?.message}`);
+        if (e instanceof RangeTooLargeError) throw e;
+        // network/timeout — try next RPC
       }
-      cursor = end + 1;
+    }
+    return [];
+  }
+
+  // Recursively splits range when a chunk is too large, then runs sub-chunks in parallel.
+  async function fetchRange(from: number, to: number, chunk: number): Promise<RawLog[]> {
+    // Build list of chunk boundaries
+    const ranges: Array<[number, number]> = [];
+    for (let c = from; c <= to; c += chunk) {
+      ranges.push([c, Math.min(c + chunk - 1, to)]);
+    }
+
+    // Process in parallel batches of 5 to avoid rate limiting
+    const CONCURRENCY = 5;
+    const out: RawLog[] = [];
+    for (let i = 0; i < ranges.length; i += CONCURRENCY) {
+      const batch = ranges.slice(i, i + CONCURRENCY);
+      const results = await Promise.all(
+        batch.map(async ([from2, to2]) => {
+          try {
+            return await fetchChunk(from2, to2);
+          } catch (e: any) {
+            if (e instanceof RangeTooLargeError) {
+              // Use Alchemy's suggested safe end if available, else halve
+              const safeChunk = e.safeEnd
+                ? Math.max(100, e.safeEnd - from2)
+                : Math.max(100, Math.floor((to2 - from2 + 1) / 2));
+              return await fetchRange(from2, to2, safeChunk);
+            }
+            console.log(`[rpc:${chain} getLogs] ${from2}-${to2} outer err: ${e?.message}`);
+            return [] as RawLog[];
+          }
+        })
+      );
+      for (const r of results) out.push(...r);
     }
     return out;
   }
 
-  // Alchemy soporta hasta 2000 blocks por llamada por defecto; dRPC/Chainstack hasta 10000.
-  // Empezamos con 2000 y el backoff lo sube si hay error.
   const allLogs = await fetchRange(fromBlock, toBlock, initialChunk);
   cacheSet(key, allLogs, config.cacheTtl);
   return allLogs;

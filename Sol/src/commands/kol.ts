@@ -29,11 +29,10 @@ export async function handleKol(ctx: Context): Promise<void> {
   const mintArgs = args.filter((a) => !a.toLowerCase().startsWith("desde:") && !a.toLowerCase().startsWith("from:"));
   if (mintArgs.length === 0 || mintArgs.length > config.maxContracts) {
     await ctx.reply(
-      `📖 *KOL Finder*\n\n` +
-      `Usage: /kol \\<ca1\\> \\<ca2\\> \\[ca3\\] \\[desde:YYYY\\-MM\\-DD\\]\n\n` +
+      `📖 *Overlap Wallets*\n\n` +
+      `Usage: /kol \\<ca1\\> \\<ca2\\> \\[ca3\\] \\[ca4\\] \\[desde:YYYY\\-MM\\-DD\\]\n\n` +
       `Finds wallets that hold ALL given tokens\\.\n` +
-      `Bots and dust wallets are automatically filtered\\.\n\n` +
-      `EVM: agrega \`desde:marzo\` o \`desde:2026\\-03\\-01\` para cubrir un período\\.\n\n` +
+      `EVM: mezcla ETH \\+ BSC libremente\\. Agrega \`desde:marzo\` para cubrir un período\\.\n\n` +
       `Max ${config.maxContracts} contracts\\.`,
       { parse_mode: "MarkdownV2" }
     );
@@ -69,7 +68,7 @@ export async function handleKol(ctx: Context): Promise<void> {
       await ctx.api.editMessageText(
         ctx.chat!.id,
         statusMsg.message_id,
-        `🎯 *KOL Finder*\n\nNo wallets found holding all ${args.length} tokens\\.\n\n_${escMd(String(result.filteredCount))} dust\\/bot wallets were filtered\\._`,
+        `🎯 *Overlap Wallets*\n\nNo wallets found holding all ${args.length} tokens\\.\n\n_${escMd(String(result.filteredCount))} dust\\/bot wallets were filtered\\._`,
         { parse_mode: "MarkdownV2" }
       );
       return;
@@ -85,7 +84,7 @@ export async function handleKol(ctx: Context): Promise<void> {
     const lines: string[] = [];
 
     // Header
-    lines.push(`🎯 *KOL Finder — ${symbols.map(escMd).join(" \\+ ")}*\n`);
+    lines.push(`🎯 *Overlap Wallets — ${symbols.map(escMd).join(" \\+ ")}*\n`);
     lines.push(
       `Found: *${escMd(String(sorted.length))}* wallets  ` +
       `\\(_${escMd(String(result.filteredCount))} dust filtered_\\)\n` +

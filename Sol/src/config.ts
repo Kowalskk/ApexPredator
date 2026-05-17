@@ -32,5 +32,5 @@ export const config = {
 
   // Thresholds
   minHoldingValueUsd: 5, // minimum USD value to show in portfolio
-  maxContracts: 3, // max contracts for /kol command
+  maxContracts: 5,
 };

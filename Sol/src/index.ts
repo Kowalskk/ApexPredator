@@ -1,5 +1,6 @@
 import { createBot } from "./bot";
 import { config } from "./config";
+import { startApiServer } from "./api";
 
 async function checkHeliusKey(): Promise<void> {
   try {
@@ -22,6 +23,7 @@ async function checkHeliusKey(): Promise<void> {
 async function main() {
   console.log("🐺 ApexPredator_sol starting...");
   await checkHeliusKey();
+  startApiServer();
 
   const bot = createBot();
 
